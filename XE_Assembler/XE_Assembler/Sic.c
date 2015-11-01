@@ -53,6 +53,30 @@ IntermediateRec* IMRArray[100];
 
 static SIC_OPTAB OPTAB[] =
 {
+	/*********Instruction Set I***********/
+	{ "ADDR", "2", 0x90 },
+	{ "CLEAR", "2", 0xB4 },
+	{ "COMPR", "2", 0xA0 },
+	{ "DIVR", "2", 0x9C },
+	{ "HIO", "1", 0xF4 },
+	{ "LDB", "3", 0x68 },
+	{ "LDS", "3", 0x6C },
+	{ "LDT" , "3", 0x74 },
+	{ "LPS", "3", 0xD0 },
+	{ "MULR", "2", 0x98 },
+	{ "RMO", "2", 0xAC },
+	{ "SHIFTL", "2", 0xA4 },
+	{ "SHIFTR", "2", 0xA8 },
+	{ "SIO", "1", 0xF0 },
+	{ "SSK", "3", 0xEC },
+	{ "STB", "3", 0x78 },
+	{ "STS", "3", 0x7C },
+	{ "STT", "3", 0x84 },
+	{ "SUBR", "2", 0x94 },
+	{ "SVC", "2", 0xB0 },
+	{ "TIO", "1", 0xF8 },
+	{ "TIXR", "2", 0xB8 },
+	/**********SIC Instruction Set*********/
 	{ "ADD",  '3',  0x18 },
 	{ "AND",  '3',  0x40 },
 	{ "COMP",  '3',  0x28 },
