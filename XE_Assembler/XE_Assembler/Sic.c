@@ -1,56 +1,56 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <malloc.h>
+#include <stdlib.h>	
+#include <string.h>	// 문자열 관리를 위함
+#include <malloc.h>	// 동적할당을 위함
 
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable
 {
-	char Mnemonic[8];
-	char Format;
-	unsigned short int  ManchineCode;
+	char Mnemonic[8];	// 명령어의 형상 (ex. LDB, LDA, etc...)
+	char Format;	// 명령어의 형식 (명령어의 길이)	3/4 형식은 편의상 3형식으로 표현하도록 설계했습니다.
+	unsigned short int  ManchineCode;	// 해당 명령어의 목적 코드
 }SIC_OPTAB;
 
 typedef struct SymbolTable
 {
-	char Label[10];
-	int Address;
+	char Label[10];	// 레이블의 이름
+	int Address;	// 레이블이 가리키는 주소
 }SIC_SYMTAB;
 
-typedef struct IntermediateRecord {
-	unsigned short int LineIndex;
-	unsigned short int Loc;
-	unsigned long int ObjectCode;
-	char LabelField[32];
-	char OperatorField[32];
-	char OperandField[32];
+typedef struct IntermediateRecord {	// 중간파일
+	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
+	unsigned short int Loc;	//  해당 명령어의 메모리상 위치
+	unsigned long int ObjectCode;	//  Pass 2를 거쳐 Assemble된 목적코드
+	char LabelField[32];	// 소스코드상 표기되어있는 레이블
+	char OperatorField[32];	// 소스코드상 표기되어있는 Mnemonic
+	char OperandField[32];	// 소스코드상 표기되어있는 피연산자
 }IntermediateRec;
 
-
-int Counter;
-int LOCCTR[100];
-int LocctrCounter = 0;
-int ProgramLen;
+// 함수의 결과를 전달하기 위해 임시로 사용하는 전역변수들
+int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
+int LOCCTR[100];	// 각 명령어들의 메모리를 세기위한 Location Counter
+int LocctrCounter = 0;	// LOCCTR의 Index 변수
 int Index;
 int j;
 int ManchineCode;
-int SymtabCounter = 0;
-int start_address;
-int program_length;
-int ArrayIndex = 0;
+int SymtabCounter = 0;	// 심볼테이블의 갯수를 세고 가리키기 위한 변수
+int start_address;	// 프로그램의 시작 주소
+int program_length;	// 프로그램의 총 길이
+int ArrayIndex = 0;	// 중간파일을 각각 가리키기 위한 Index 변수
 
-unsigned short int FoundOnSymtab_flag = 0;
-unsigned short int FoundOnOptab_flag = 0;
+unsigned short int FoundOnSymtab_flag = 0;	// 해당 레이블을 심볼테이블에서 찾았다는 것을 반환하기 위함
+unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블에서 찾았다는 것을 반환하기 위함
 
-char Buffer[256];
-char Label[32];
-char Mnemonic[32];
-char Operand[32];
+char Buffer[256];	// 각 소스코드를 읽기위한 버퍼 변수
+char Label[32];	// 레이블을 임시로 저장하기 위한 변수
+char Mnemonic[32];	// Mnemnic을 임시로 저장하기 위한 변수
+char Operand[32];	// 피연산자를 임시로 저장하기 위한 변수
+// 이 변수들은 모두 소스코드상의 표기법을 가짐
 
-SIC_SYMTAB SYMTAB[20];
-IntermediateRec* IMRArray[100];
+SIC_SYMTAB SYMTAB[20];	// 심볼테이블 변수
+IntermediateRec* IMRArray[100];	// 중간파일 변수
 
-
+// OP 테이블
 static SIC_OPTAB OPTAB[] =
 {
 	/*********Instruction Set I***********/
@@ -107,7 +107,7 @@ static SIC_OPTAB OPTAB[] =
 
 
 /****************************** DFINATE FUNCTION *****************************/
-char* ReadLabel() {
+char* ReadLabel() {	// 레이블 읽기
 	j = 0;//zeroing
 	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')
 		Label[j++] = Buffer[Index++];
@@ -115,12 +115,14 @@ char* ReadLabel() {
 	return(Label);
 }
 
-void SkipSpace() {
+void SkipSpace() {	// 공백 스킵하기 (Index를 뒤로 옮김)
 	while (Buffer[Index] == ' ' || Buffer[Index] == '\t')
 		Index++;
 }
 
-char* ReadOprator() {
+
+
+char* ReadOprator() {	// Mnemonic 읽기
 	j = 0;//zeroing
 	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')
 		Mnemonic[j++] = Buffer[Index++];
@@ -128,7 +130,7 @@ char* ReadOprator() {
 	return(Mnemonic);
 }
 
-char* ReadOperand() {
+char* ReadOperand() {	// 피연산자 읽기
 	j = 0;//zeroing
 	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')
 		Operand[j++] = Buffer[Index++];
@@ -136,13 +138,13 @@ char* ReadOperand() {
 	return(Operand);
 }
 
-void RecordSymtab(char* label) {
+void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입력
 	strcpy(SYMTAB[SymtabCounter].Label, label);
 	SYMTAB[SymtabCounter].Address = LOCCTR[LocctrCounter - 1];
 	SymtabCounter++;
 }
 
-int SearchSymtab(char* label) {
+int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
 
 	for (int k = 0; k <= SymtabCounter; k++) {
@@ -152,15 +154,15 @@ int SearchSymtab(char* label) {
 			break;
 		}
 	}
-	return (FoundOnSymtab_flag);
+	return (FoundOnSymtab_flag);	// 없으면 0 반환
 }
 
-int SearchOptab(char * Mnemonic) {
+int SearchOptab(char * Mnemonic) {	// 심볼테이블에서 OP code 찾기
 	int size = sizeof(OPTAB) / sizeof(SIC_OPTAB);
 	FoundOnOptab_flag = 0;
 	for (int i = 0; i<size; i++) {
 		if (!strcmp(Mnemonic, OPTAB[i].Mnemonic)) {
-			Counter = i;
+			Counter = i;	// 있을 경우 Counter는 해당 OP code가 있는 OPTAB 상 Index 반환하기
 			FoundOnOptab_flag = 1;
 			break;
 		}
@@ -168,7 +170,7 @@ int SearchOptab(char * Mnemonic) {
 	return (FoundOnOptab_flag);
 }
 
-int StrToDec(char* c) {
+int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
 	int dec_num = 0;
 	char temp[10];
 	strcpy(temp, c);
@@ -182,7 +184,7 @@ int StrToDec(char* c) {
 	return (dec_num);
 }
 
-int StrToHex(char* c)
+int StrToHex(char* c)	// 16진수를 표현하는 String을 정수형으로 변환해서 반환
 {
 	int hex_num = 0;
 	char temp[10];
@@ -202,7 +204,7 @@ int StrToHex(char* c)
 	}
 	return (hex_num);
 }
-int ComputeLen(char* c) {
+int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
 	unsigned int b;
 	char len[32];
 
@@ -220,7 +222,7 @@ int ComputeLen(char* c) {
 	return (b);
 }
 
-void CreateProgramList() {
+void CreateProgramList() {	// 리스트 파일 생성
 	int loop;
 	FILE *fptr_list;
 
@@ -228,10 +230,11 @@ void CreateProgramList() {
 
 	if (fptr_list == NULL)
 	{
-		printf("ERROE: Unable to open the sic.list.\n");
+		printf("ERROR: Unable to open the sic.list.\n");	// 리스트 파일을 쓸 수 없을 경우 예외처리
 		exit(1);
 	}
 
+	// 리스트 파일 내용 출력
 	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");
 	for (loop = 0; loop<ArrayIndex; loop++)
 	{
@@ -243,7 +246,7 @@ void CreateProgramList() {
 	fclose(fptr_list);
 }
 
-void CreateObjectCode() {
+void CreateObjectCode() {	// 목적파일 생성
 	int first_address;
 	int last_address;
 	int temp_address;
@@ -260,7 +263,7 @@ void CreateObjectCode() {
 	fptr_obj = fopen("sic.obj", "w");
 	if (fptr_obj == NULL)
 	{
-		printf("ERROE: Unable to open the sic.obj.\n");
+		printf("ERROR: Unable to open the sic.obj.\n");	// 목적파일을 쓸 수 없을 경우 예외처리
 		exit(1);
 	}
 
@@ -364,22 +367,22 @@ void main(void)
 	/******************************TEST INPUT********************************************/
 	
 	fptr = fopen(filename, "r");
-	if (fptr == NULL)
+	if (fptr == NULL)	// 소스코드 파일 읽기 실패했을 경우 예외처리
 	{
-		printf("ERROE: Unable to open the %s file.\n", filename);
+		printf("ERROR: Unable to open the %s file.\n", filename);
 		exit(1);
 	}
 
 	/********************************** PASS 1 ***********************************/
 	printf("Pass 1 Processing...\n");
-	while (fgets(Buffer, 256, fptr) != NULL)
+	while (fgets(Buffer, 256, fptr) != NULL)	// 소스코드 파일에서 읽기
 	{
 		is_empty_line = strlen(Buffer);
 
 		Index = 0;
 		j = 0;
 		strcpy(label, ReadLabel());
-		if (Label[0] == '.')
+		if (Label[0] == '.')	// 해당 소스코드가 주석인지 아닌지 확인
 			is_comment = 1;
 		else
 			is_comment = 0;
@@ -389,27 +392,24 @@ void main(void)
 			Index = 0;
 			j = 0;
 
-			IMRArray[ArrayIndex] = (IntermediateRec*)malloc(sizeof(IntermediateRec));/* [A] */
+			IMRArray[ArrayIndex] = (IntermediateRec*)malloc(sizeof(IntermediateRec));/* [A] */	// 중간파일 동적할당
 
-			IMRArray[ArrayIndex]->LineIndex = ArrayIndex;
-			strcpy(label, ReadLabel());
-			strcpy(IMRArray[ArrayIndex]->LabelField, label);
-			SkipSpace();
+			IMRArray[ArrayIndex]->LineIndex = ArrayIndex;	// 소스코드 상의 행 삽입
+			strcpy(label, ReadLabel());	// 레이블을 읽어 Label에 저장
+			strcpy(IMRArray[ArrayIndex]->LabelField, label);	// 레이블을 중간파일에 저장
+			SkipSpace();	// 공백 제거
 
-			if (line == start_line)	// 첫줄이 주석일 경우 예외처리
+			if (line == start_line)	// 프로그램의 시작 지점이 첫줄이 아닐 경우 (첫번째 줄이 주석일 경우) 예외처리
 			{
-				strcpy(opcode, ReadOprator());
-				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);/* [A] */
-				if (!strcmp(opcode, "START"))
-				{
+				strcpy(opcode, ReadOprator());	// Mnemonic 읽기
+				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode); /* [A] */	// 읽은 Mnemonic을 중간파일에 저장
+				if (!strcmp(opcode, "START")) {	// 시작주소 초기화
 					SkipSpace();
 					strcpy(operand, ReadOperand());
 					strcpy(IMRArray[ArrayIndex]->OperandField, operand);/* [A] */
 					LOCCTR[LocctrCounter] = StrToHex(operand);
 					start_address = LOCCTR[LocctrCounter];
-				}
-				else
-				{
+				} else {	// 시작 주소가 명시되어있지 않을 경우 0으로 초기화
 					LOCCTR[LocctrCounter] = 0;
 					start_address = LOCCTR[LocctrCounter];
 				}
@@ -429,7 +429,7 @@ void main(void)
 						if (SearchSymtab(label))
 						{
 							fclose(fptr);
-							printf("ERROE: Duplicate Symbol\n");
+							printf("ERROR: Duplicate Symbol\n");
 							FoundOnSymtab_flag = 0;
 							exit(1);
 						}
@@ -448,7 +448,7 @@ void main(void)
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
 					else {
 						fclose(fptr);
-						printf("ERROE: Invalid Operation Code\n");
+						printf("ERROR: Invalid Operation Code\n");
 						exit(1);
 					}
 				}
@@ -537,9 +537,11 @@ void main(void)
 			/* do nothing */;
 	}
 
+	// 리스트 파일과 목적 파일 생성
 	CreateProgramList();
 	CreateObjectCode();
 
+	// 메모리 동적할당 해제
 	for (loop = 0; loop<ArrayIndex; loop++)
 		free(IMRArray[loop]);
 
