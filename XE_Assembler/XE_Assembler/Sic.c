@@ -316,6 +316,7 @@ void main(void)
 	int is_empty_line;
 	int is_comment;
 	int loader_flag = 0;
+	int start_line = 0;
 
 	printf(" ******************************************************************************\n");
 	printf(" * Program: SIC ASSEMBYER                                                     *\n");
@@ -365,7 +366,7 @@ void main(void)
 			strcpy(IMRArray[ArrayIndex]->LabelField, label);
 			SkipSpace();
 
-			if (line == 0)
+			if (line == start_line)	// 첫줄이 주석일 경우 예외처리
 			{
 				strcpy(opcode, ReadOprator());
 				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);/* [A] */
@@ -427,6 +428,11 @@ void main(void)
 			LocctrCounter++;
 			ArrayIndex++;
 		}
+		
+		if (is_comment == 1) {	// 첫 줄이 주석일 경우 시작이 되지 않는 오류 수정
+			start_line += 1;
+		}
+
 		FoundOnOptab_flag = 0;
 		line += 1;
 	}
