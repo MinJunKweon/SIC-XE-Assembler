@@ -332,7 +332,13 @@ void main(void)
 
 
 	printf("\nEnter the file name you want to assembly (sic.asm):");
-	scanf("%s", filename);
+	
+	/******************************TEST INPUT********************************************/
+	printf("x:\\fig2_1.asm\n");
+	//scanf("%s", filename);
+	strcpy(filename, "x:\\fig2_1.asm");
+	/******************************TEST INPUT********************************************/
+	
 	fptr = fopen(filename, "r");
 	if (fptr == NULL)
 	{
