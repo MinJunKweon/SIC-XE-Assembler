@@ -515,4 +515,6 @@ void main(void)
 
 	printf("Compeleted Assembly\n");
 	fclose(fptr);
+
+	exit(0);	// exit을 안해서 프로그램이 비정상적으로 종료되는 버그 수정
 }
