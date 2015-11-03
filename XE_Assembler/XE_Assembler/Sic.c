@@ -30,6 +30,7 @@ typedef struct IntermediateRecord {	// 중간파일
 int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
 int LOCCTR[100];	// 각 명령어들의 메모리를 세기위한 Location Counter
 int LocctrCounter = 0;	// LOCCTR의 Index 변수
+int Flag;
 int Index;
 int j;
 int ManchineCode;
@@ -54,28 +55,28 @@ IntermediateRec* IMRArray[100];	// 중간파일 변수
 static SIC_OPTAB OPTAB[] =
 {
 	/*********Instruction Set I***********/
-	{ "ADDR", "2", 0x90 },
-	{ "CLEAR", "2", 0xB4 },
-	{ "COMPR", "2", 0xA0 },
-	{ "DIVR", "2", 0x9C },
-	{ "HIO", "1", 0xF4 },
-	{ "LDB", "3", 0x68 },
-	{ "LDS", "3", 0x6C },
-	{ "LDT" , "3", 0x74 },
-	{ "LPS", "3", 0xD0 },
-	{ "MULR", "2", 0x98 },
-	{ "RMO", "2", 0xAC },
-	{ "SHIFTL", "2", 0xA4 },
-	{ "SHIFTR", "2", 0xA8 },
-	{ "SIO", "1", 0xF0 },
-	{ "SSK", "3", 0xEC },
-	{ "STB", "3", 0x78 },
-	{ "STS", "3", 0x7C },
-	{ "STT", "3", 0x84 },
-	{ "SUBR", "2", 0x94 },
-	{ "SVC", "2", 0xB0 },
-	{ "TIO", "1", 0xF8 },
-	{ "TIXR", "2", 0xB8 },
+	{ "ADDR", '2', 0x90 },
+	{ "CLEAR", '2', 0xB4 },
+	{ "COMPR", '2', 0xA0 },
+	{ "DIVR", '2', 0x9C },
+	{ "HIO", '1', 0xF4 },
+	{ "LDB", '3', 0x68 },
+	{ "LDS", '3', 0x6C },
+	{ "LDT" , '3', 0x74 },
+	{ "LPS", '3', 0xD0 },
+	{ "MULR", '2', 0x98 },
+	{ "RMO", '2', 0xAC },
+	{ "SHIFTL", '2', 0xA4 },
+	{ "SHIFTR", '2', 0xA8 },
+	{ "SIO", '1', 0xF0 },
+	{ "SSK", '3', 0xEC },
+	{ "STB", '3', 0x78 },
+	{ "STS", '3', 0x7C },
+	{ "STT", '3', 0x84 },
+	{ "SUBR", '2', 0x94 },
+	{ "SVC", '2', 0xB0 },
+	{ "TIO", '1', 0xF8 },
+	{ "TIXR", '2', 0xB8 },
 	/**********SIC Instruction Set*********/
 	{ "ADD",  '3',  0x18 },
 	{ "AND",  '3',  0x40 },
@@ -120,7 +121,22 @@ void SkipSpace() {	// 공백 스킵하기 (Index를 뒤로 옮김)
 		Index++;
 }
 
-
+int ReadFlag(char *Mnemonic) {	// Mnemonic에서 플래그 비트 읽기
+	switch (Mnemonic[0]) {
+	case '+':
+		Flag = 1;
+		break;
+	case '#':
+		Flag = 2;
+		break;
+	case '@':
+		Flag = 3;
+		break;
+	default:
+		Flag = 0;
+	}
+	return Flag;
+}
 
 char* ReadOprator() {	// Mnemonic 읽기
 	j = 0;//zeroing
@@ -139,6 +155,9 @@ char* ReadOperand() {	// 피연산자 읽기
 }
 
 void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입력
+	if (ReadFlag(label)) { // Immediate or Indirect Addressing Mode 예외 처리
+		label = label + 1;
+	}
 	strcpy(SYMTAB[SymtabCounter].Label, label);
 	SYMTAB[SymtabCounter].Address = LOCCTR[LocctrCounter - 1];
 	SymtabCounter++;
@@ -146,7 +165,9 @@ void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입�
 
 int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
-
+	if (ReadFlag(Mnemonic)) { // Extended Instruction일 경우 예외처리
+		label = label + 1;
+	}
 	for (int k = 0; k <= SymtabCounter; k++) {
 		if (!strcmp(SYMTAB[k].Label, label)) {
 			FoundOnSymtab_flag = 1;
@@ -160,6 +181,9 @@ int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 int SearchOptab(char * Mnemonic) {	// 심볼테이블에서 OP code 찾기
 	int size = sizeof(OPTAB) / sizeof(SIC_OPTAB);
 	FoundOnOptab_flag = 0;
+	if (ReadFlag(Mnemonic)) { // Extended Instruction일 경우 예외처리
+		Mnemonic = Mnemonic + 1;
+	}
 	for (int i = 0; i<size; i++) {
 		if (!strcmp(Mnemonic, OPTAB[i].Mnemonic)) {
 			Counter = i;	// 있을 경우 Counter는 해당 OP code가 있는 OPTAB 상 Index 반환하기
@@ -416,7 +440,8 @@ void main(void)
 			}
 			else
 			{
-				strcpy(opcode, ReadOprator());
+
+				strcpy(opcode, ReadOprator());	// OP Code 읽기
 				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);
 				SkipSpace();
 				strcpy(operand, ReadOperand());
@@ -471,22 +496,27 @@ void main(void)
 	/********************************** PASS 2 ***********************************/
 	printf("Pass 2 Processing...\n");
 
-	unsigned long inst_fmt;//
-	unsigned long inst_fmt_opcode;
-	unsigned long inst_fmt_index;
-	unsigned long inst_fmt_address;
+	unsigned long inst_fmt;		// 최종 목적 코드
+	unsigned long inst_fmt_opcode;	// 목적코드의 op code 부분을 나타내는 변수
+	unsigned long inst_fmt_index;	// index Addressing Mode를 나타내는 변수
+	unsigned long inst_fmt_address;	// 피연산자 부분을 나타내는 변수 (필요에 의해서 직접적인 상수가 들어갈 수도 있다. ex. Immediate Addressing Mode)
+	int inst_fmt_byte;		// 몇형식 명령어인지 나타내는 변수 (바이트 수)
 
-
-	for (loop = 1; loop<ArrayIndex; loop++) {
+	for (loop = 1; loop<ArrayIndex; loop++) {	// 중간파일을 순차적으로 읽음
+		// 각 변수들 초기화
 		inst_fmt_opcode = 0;
 		inst_fmt_index = 0;
 		inst_fmt_address = 0;
+		inst_fmt_byte = 0;
 
-		strcpy(opcode, IMRArray[loop]->OperatorField);
+		strcpy(opcode, IMRArray[loop]->OperatorField);	// op code 부분 복사
 
-		if (SearchOptab(opcode)) {
-			inst_fmt_opcode = OPTAB[Counter].ManchineCode;
-			inst_fmt_opcode <<= 16;
+		if (SearchOptab(opcode)) {	// opcode 찾기
+			inst_fmt_opcode = OPTAB[Counter].ManchineCode;	// opcode의 목적코드 복사
+			inst_fmt_byte = OPTAB[Counter].Format - '0';	// 해당 명령어가 몇 바이트를 사용하는 지 저장
+			if (inst_fmt_byte == 3 && ReadFlag(opcode)) {	// 만약 4형식 명령어일 경우 분기처리
+				inst_fmt_byte = 4;
+			}
 			IMRArray[loop]->ObjectCode = inst_fmt_opcode;
 			strcpy(operand, IMRArray[loop]->OperandField);
 
