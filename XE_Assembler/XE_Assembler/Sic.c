@@ -17,6 +17,13 @@ typedef struct SymbolTable
 	int Address;	// 레이블이 가리키는 주소
 }SIC_SYMTAB;
 
+// 레지스터 테이블을 구성하는 레지스터 레코드
+typedef struct RegisterTable
+{
+	char name[3];	// 레지스터 Mnemonic
+	int id;	// 레지스터의 고유번호
+} SIC_XE_REGISTER;
+
 typedef struct IntermediateRecord {	// 중간파일
 	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
 	unsigned short int Loc;	//  해당 명령어의 메모리상 위치
@@ -50,6 +57,19 @@ char Operand[32];	// 피연산자를 임시로 저장하기 위한 변수
 
 SIC_SYMTAB SYMTAB[20];	// 심볼테이블 변수
 IntermediateRec* IMRArray[100];	// 중간파일 변수
+
+static SIC_XE_REGISTER REG_TAB[] =
+{
+	{ "A", 0 },
+	{ "X", 1 },
+	{ "L", 2 },
+	{ "B", 3 },
+	{ "S", 4 },
+	{ "T", 5 },
+	{ "F", 6 },
+	{ "PC", 8 },
+	{ "SW", 9 }
+};
 
 // OP 테이블
 static SIC_OPTAB OPTAB[] =
