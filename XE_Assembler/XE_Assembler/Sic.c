@@ -3,6 +3,8 @@
 #include <string.h>	// 문자열 관리를 위함
 #include <malloc.h>	// 동적할당을 위함
 
+#define TEST_FNAME "x:\\2.asm"
+
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable
 {
@@ -420,9 +422,9 @@ void main(void)
 	printf("\nEnter the file name you want to assembly (sic.asm):");
 	
 	/******************************TEST INPUT********************************************/
-	printf("x:\\fig2_1.asm\n");
+	printf("%s\n", TEST_FNAME);
 	//scanf("%s", filename);
-	strcpy(filename, "x:\\fig2_1.asm");
+	strcpy(filename, TEST_FNAME);
 	/******************************TEST INPUT********************************************/
 	
 	fptr = fopen(filename, "r");
@@ -513,9 +515,11 @@ void main(void)
 					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
 					else {	// 정의되지 않은 OP code일 경우 경고후 프로그램 종료
-						fclose(fptr);
-						printf("ERROR: Invalid Operation Code\n");
-						exit(1);
+						if (strcmp(opcode, "BASE")) {
+							fclose(fptr);
+							printf("ERROR: Invalid Operation Code\n");
+							exit(1);
+						}
 					}
 				}
 			}
