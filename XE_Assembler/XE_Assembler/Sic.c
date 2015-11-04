@@ -35,6 +35,7 @@ typedef struct IntermediateRecord {	// 중간파일
 
 // 함수의 결과를 전달하기 위해 임시로 사용하는 전역변수들
 int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
+int RegIdx;		// 레지스터의 위치를 가리킴. Counter 변수와 역할 비슷
 int LOCCTR[100];	// 각 명령어들의 메모리를 세기위한 Location Counter
 int LocctrCounter = 0;	// LOCCTR의 Index 변수
 int Flag;
@@ -48,6 +49,7 @@ int ArrayIndex = 0;	// 중간파일을 각각 가리키기 위한 Index 변수
 
 unsigned short int FoundOnSymtab_flag = 0;	// 해당 레이블을 심볼테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블에서 찾았다는 것을 반환하기 위함
+unsigned short int FoundOnRegTab_flag = 0;	// 레지스터 테이블에 해당 레지스터의 형상이 있는지 확인
 
 char Buffer[256];	// 각 소스코드를 읽기위한 버퍼 변수
 char Label[32];	// 레이블을 임시로 저장하기 위한 변수
@@ -212,6 +214,19 @@ int SearchOptab(char * Mnemonic) {	// 심볼테이블에서 OP code 찾기
 		}
 	}
 	return (FoundOnOptab_flag);
+}
+
+int SearchRegTab(char * Mnemonic) {
+	int size = sizeof(REG_TAB) / sizeof(SIC_XE_REGISTER);
+	FoundOnRegTab_flag = 0;
+	for (int i = 0; i < size; i++) {
+		if (!strcmp(Mnemonic, REG_TAB[i].name)) {
+			RegIdx = i;
+			FoundOnRegTab_flag = 1;
+			break;
+		}
+	}
+	return (FoundOnRegTab_flag);
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
