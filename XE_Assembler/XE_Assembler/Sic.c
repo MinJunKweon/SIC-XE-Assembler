@@ -477,56 +477,63 @@ void main(void)
 			{
 
 				strcpy(opcode, ReadOprator());	// OP Code 읽기
-				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);
-				SkipSpace();
-				strcpy(operand, ReadOperand());
-				strcpy(IMRArray[ArrayIndex]->OperandField, operand);
+				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);	// 중간파일에 OP code 복사
+				SkipSpace();	// OP code와 피연산자 사이의 공백 제거
+				strcpy(operand, ReadOperand());	// 피연산자 부분 읽기
+				strcpy(IMRArray[ArrayIndex]->OperandField, operand);	// 중간파일에 피연산자 복사
 
-				if (strcmp(opcode, "END"))
+				if (strcmp(opcode, "END"))	// OP code가 END 어셈블러 지시자일 경우
 				{
-					if (label[0] != '\0')
+					if (label[0] != '\0')	// 레이블이 있을 경우
 					{
-						if (SearchSymtab(label))
+						if (SearchSymtab(label))	// 같은 이름의 레이블이 있는지 찾음
 						{
+							// 만약 같은 이름의 레이블이 있을 경우 Alert하고 프로그램 종료
 							fclose(fptr);
 							printf("ERROR: Duplicate Symbol\n");
 							FoundOnSymtab_flag = 0;
 							exit(1);
 						}
-						RecordSymtab(label);
+						RecordSymtab(label);	// 같은이름이 없으므로 심볼테이블에 추가
 					}
 
-					if (SearchOptab(opcode))
+					if (SearchOptab(opcode)) {	// OP Code가 OPTAB에 있을 경우 명령어 형식만큼 메모리 확보
 						LOCCTR[LocctrCounter] = loc + (int)(OPTAB[Counter].Format - '0');
-					else if (!strcmp(opcode, "WORD"))
+						if (ReadFlag(opcode)) {
+							// 4형식 명령어일 경우
+							LOCCTR[LocctrCounter] += 1;	// 기존에 1바이트 더 추가
+						}
+					}
+					else if (!strcmp(opcode, "WORD"))	// 3바이트(1 WORD) 확보
 						LOCCTR[LocctrCounter] = loc + 3;
-					else if (!strcmp(opcode, "RESW"))
+					else if (!strcmp(opcode, "RESW"))	// 피연산자 갯수의 WORD 만큼 메모리 확보
 						LOCCTR[LocctrCounter] = loc + 3 * StrToDec(operand);
-					else if (!strcmp(opcode, "RESB"))
+					else if (!strcmp(opcode, "RESB"))	// 피연산자 갯수의 바이트만큼 메모리 확보
 						LOCCTR[LocctrCounter] = loc + StrToDec(operand);
-					else if (!strcmp(opcode, "BYTE"))
+					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
-					else {
+					else {	// 정의되지 않은 OP code일 경우 경고후 프로그램 종료
 						fclose(fptr);
 						printf("ERROR: Invalid Operation Code\n");
 						exit(1);
 					}
 				}
 			}
-			loc = LOCCTR[LocctrCounter];
-			IMRArray[ArrayIndex]->Loc = LOCCTR[LocctrCounter - 1];
-			LocctrCounter++;
-			ArrayIndex++;
+			loc = LOCCTR[LocctrCounter];	// loc을 다시 설정하고 다음 루프를 준비
+			IMRArray[ArrayIndex]->Loc = LOCCTR[LocctrCounter - 1];	// 중간파일에 해당 코드의 메모리 번지 기록
+			LocctrCounter++;	// LOCCTR를 접근하는 인덱스 변수 값 증가
+			ArrayIndex++;	// 다음 코드를 읽기 위한 중간파일의 인덱스 변수 값 증가
 		}
 		
 		if (is_comment == 1) {	// 첫 줄이 주석일 경우 시작이 되지 않는 오류 수정
 			start_line += 1;
 		}
 
-		FoundOnOptab_flag = 0;
-		line += 1;
+		FoundOnOptab_flag = 0;	// flag 변수 초기화
+		line += 1;	// 소스 행 1 증가
 	}
 	program_length = LOCCTR[LocctrCounter - 2] - LOCCTR[0];
+	// END 지시자를 만났을 경우 END 지시자 바로 이전 소스코드의 메모리 위치와 시작주소를 빼서 총 프로그램 길이 계산
 
 	/********************************** PASS 2 ***********************************/
 	printf("Pass 2 Processing...\n");
