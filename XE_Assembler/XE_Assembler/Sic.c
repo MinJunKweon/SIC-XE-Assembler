@@ -15,7 +15,7 @@
 #define IMR_SIZE 100	// 중간파일의 레코드 최대 개수
 #define RLD_SIZE 20		// Relocation DIctionary의 레코드 최대 개수
 
-#define TEST_FNAME "x:\\2.asm"
+#define TEST_FNAME "x:\\3.asm"
 
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable {	// OP 테이블의 각각의 레코드 구조체
@@ -459,7 +459,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	while (1)	// 무한루프 시작
 	{
 		first_address = IMRArray[loop]->Loc;	// 한줄의 시작주소를 저장
-		last_address = IMRArray[loop]->Loc + 27;	// 1D개의 바이트를 출력할 수 있으므로 최대 27 바이트 출력하는 한계 설정
+		last_address = IMRArray[loop]->Loc + 29;	// 1D개의 바이트를 출력할 수 있으므로 최대 29 바이트 출력하는 한계 설정
 		first_index = loop;	// 반복문을 돌기위한 첫번째 인덱스값을 초기화
 
 		// 출력할 수 있는 길이 계산
@@ -485,7 +485,21 @@ void CreateObjectCode() {	// 목적파일 생성
 				last_index = loop + 1;	// 한줄에 표현할 수 있는 목적코드의 길이를 계산하기 위해 저장
 				x++; // 명령어 갯수 1 증가
 			}
-			temp_address = IMRArray[loop + 1]->Loc;	// 다음번 명령어의 시작점이 한계점인지 검사하기 위한 저장
+			// 다음번 명령어의 시작점이 한계점인지 검사하기 위한 저장
+			temp_address = IMRArray[loop + 1]->Loc;
+			// 다음번 명령어가 출력되어도 출력할 수 있는 양의 한계를 넘지 않는 지 검사 (형식이 다를 수 있기 때문)
+			if (SearchOptab(IMRArray[loop + 1]->OperatorField)) {
+				if (ReadFlag(IMRArray[loop + 1]->OperatorField)) {	// 4형식 명령어일 경우
+					temp_address += 1;	// 1바이트 추가
+				}
+				temp_address += OPTAB[Counter].Format - '0';	// 각각 명령어 형식만큼 추가
+			} else {
+				if (!strcmp(IMRArray[loop + 1]->OperatorField, "WORD")
+					|| !strcmp(IMRArray[loop + 1]->OperatorField, "BYTE")) {
+					// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
+					temp_address += ComputeLen(IMRArray[loop + 1]->OperandField);
+				}
+			}
 		}
 
 		// 텍스트 레코드로 한줄의 시작주소와 목적코드의 길이 계산해서 출력
