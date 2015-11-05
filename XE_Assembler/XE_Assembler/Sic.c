@@ -116,7 +116,7 @@ static SIC_OPTAB OPTAB[] =
 	{ "JEQ",  '3',  0x30 },
 	{ "JGT",  '3',  0x34 },
 	{ "JLT",  '3',  0x38 },
-	{ "JSUB",  '3',  0x4B },
+	{ "JSUB",  '3',  0x48 },
 	{ "LDA",  '3',  0x00 },
 	{ "LDCH",  '3',  0x50 },
 	{ "LDL",  '3',  0x08 },
@@ -335,7 +335,7 @@ void CreateProgramList() {	// 리스트 파일 생성
 	for (loop = 0; loop<ArrayIndex; loop++)
 	{
 		len = 0;
-		fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);	// 모든 코드들의 공통되는 부분
+		fprintf(fptr_list, "%04X\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);	// 모든 코드들의 공통되는 부분
 		if (!strcmp(IMRArray[loop]->OperatorField, "START")
 			|| !strcmp(IMRArray[loop]->OperatorField, "RESW")
 			|| !strcmp(IMRArray[loop]->OperatorField, "RESB")
@@ -349,24 +349,24 @@ void CreateProgramList() {	// 리스트 파일 생성
 			// operator가 OPTAB에 존재할 경우
 			if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
 				if (ReadFlag(IMRArray[loop]->OperatorField)) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
-					fprintf(fptr_list, "%08x\n", IMRArray[loop]->ObjectCode);	// 4형식일 때 4바이트 출력
+					fprintf(fptr_list, "%08X\n", IMRArray[loop]->ObjectCode);	// 4형식일 때 4바이트 출력
 				} else {
-					fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);	// 3형식일 때 3바이트 출력
+					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3형식일 때 3바이트 출력
 				}
 			} else if (OPTAB[Counter].Format == '2') {	// 해당 명령어가 2형식 명령어일 경우
-				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+				fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
 			} else if (OPTAB[Counter].Format == '1') {	// 해당 명령어가 1형식 명령어일 경우
-				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
+				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
 			}
 		} else {
 			// C'XX' 혹은 X'XX' 일때 예외처리
 			len = (strlen(IMRArray[loop]->OperandField)-3)/2;	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
 			if (len == 1) {	// 1바이트의 경우
-				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
+				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
 			} else if (len == 2) {	// 2바이트의 경우
-				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+				fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
 			} else if (len == 3) {	// 3바이트의 경우
-				fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
+				fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
 			} else {
 				fprintf(fptr_list, "\n");	// 그외의 경우 object code 생략
 			}
@@ -401,8 +401,8 @@ void CreateObjectCode() {	// 목적파일 생성
 	loop = 0;
 	if (!strcmp(IMRArray[loop]->OperatorField, "START"))
 	{
-		printf("H%-6s%06x%06x\n", IMRArray[loop]->LabelField, start_address, program_length);
-		fprintf(fptr_obj, "H^%-6s^%06x^%06x\n", IMRArray[loop]->LabelField, start_address, program_length);
+		printf("H%-6s%06X%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
+		fprintf(fptr_obj, "H^%-6s^%06X^%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
 		loop++;
 	}
 
@@ -428,18 +428,18 @@ void CreateObjectCode() {	// 목적파일 생성
 			temp_address = IMRArray[loop + 1]->Loc;
 		}
 
-		printf("T%06x%02x", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
-		fprintf(fptr_obj, "T^%06x^%02x", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
+		printf("T%06X%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
+		fprintf(fptr_obj, "T^%06X^%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
 
 		for (xx = 0; xx<x; xx++)
 		{
 			if ((strcmp(temp_operator[xx], "BYTE") == 0) && (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x')) {
-				printf("%02x", temp_objectcode[xx]);
-				fprintf(fptr_obj, "^%02x", temp_objectcode[xx]);
+				printf("%02X", temp_objectcode[xx]);
+				fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
 			}
 			else {
-				printf("%06x", temp_objectcode[xx]);
-				fprintf(fptr_obj, "^%06x", temp_objectcode[xx]);
+				printf("%06X", temp_objectcode[xx]);
+				fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
 			}
 		}
 
@@ -450,8 +450,8 @@ void CreateObjectCode() {	// 목적파일 생성
 			break;
 	}
 
-	printf("E%06x\n\n", start_address);
-	fprintf(fptr_obj, "E^%06x\n\n", start_address);
+	printf("E%06X\n\n", start_address);
+	fprintf(fptr_obj, "E^%06X\n\n", start_address);
 	fclose(fptr_obj);
 }
 
@@ -611,7 +611,7 @@ void main(void)
 
 	/********************************** PASS 2 ***********************************/
 	for (int dd = 0; dd < SymtabCounter; dd++) {
-		printf("%7s:%8x\n", SYMTAB[dd].Label, SYMTAB[dd].Address);
+		printf("%7s:%8X\n", SYMTAB[dd].Label, SYMTAB[dd].Address);
 	}
 
 	printf("Pass 2 Processing...\n");
