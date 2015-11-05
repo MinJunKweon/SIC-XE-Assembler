@@ -376,6 +376,7 @@ void CreateProgramList() {	// 리스트 파일 생성
 }
 
 void CreateObjectCode() {	// 목적파일 생성
+	// 목적파일 생성에 사용할 임시변수 선언
 	int first_address;
 	int last_address;
 	int temp_address;
@@ -389,7 +390,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	char temp_operand[12][10];
 
 	FILE *fptr_obj;
-	fptr_obj = fopen("sic.obj", "w");
+	fptr_obj = fopen("sic.obj", "w");	// sic.obj 파일을 쓰기형태로 선언
 	if (fptr_obj == NULL)
 	{
 		printf("ERROR: Unable to open the sic.obj.\n");	// 목적파일을 쓸 수 없을 경우 예외처리
@@ -398,61 +399,105 @@ void CreateObjectCode() {	// 목적파일 생성
 
 	printf("Creating Object Code...\n\n");
 
-	loop = 0;
-	if (!strcmp(IMRArray[loop]->OperatorField, "START"))
+	loop = 0;	// 반복을 위한 인덱스 변수
+	if (!strcmp(IMRArray[loop]->OperatorField, "START"))	// 중간파일의 첫번째 원소가 START일 때
 	{
+		// 헤더 레코드 작성 (프로그램 이름, 시작주소, 프로그램 길이)
+		// 콘솔창과 파일 둘다 출력
 		printf("H%-6s%06X%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
 		fprintf(fptr_obj, "H^%-6s^%06X^%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
 		loop++;
 	}
 
-	while (1)
+	while (1)	// 무한루프 시작
 	{
-		first_address = IMRArray[loop]->Loc;
-		last_address = IMRArray[loop]->Loc + 27;
-		first_index = loop;
+		first_address = IMRArray[loop]->Loc;	// 한줄의 시작주소를 저장
+		last_address = IMRArray[loop]->Loc + 27;	// 1D개의 바이트를 출력할 수 있으므로 최대 27 바이트 출력하는 한계 설정
+		first_index = loop;	// 반복문을 돌기위한 첫번째 인덱스값을 초기화
 
-		for (x = 0, temp_address = first_address; temp_address <= last_address; loop++)
-		{
-			if (!strcmp(IMRArray[loop]->OperatorField, "END"))
+		// 출력할 수 있는 길이 계산
+		for (x = 0, temp_address = first_address; temp_address <= last_address; loop++) {
+			// END 어셈블러 지시자가 나오거나 한줄에 출력할 수 있는 양의 한계에 도달했을 때 for문 종료
+			// x : 한 줄안에 출력할 수 있는 목적코드 최대 개수
+
+			if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만나면 for문 탈출
 				break;
-			else if (strcmp(IMRArray[loop]->OperatorField, "RESB") && strcmp(IMRArray[loop]->OperatorField, "RESW") && strcmp(IMRArray[loop]->OperatorField, "BASE"))
-			{
+			else if (strcmp(IMRArray[loop]->OperatorField, "RESB") && strcmp(IMRArray[loop]->OperatorField, "RESW") && strcmp(IMRArray[loop]->OperatorField, "BASE")) {
+				// 목적코드가 없는 어셈블러 지시자를 제외한 나머지들을 출력하기 위해 저장
+				// temp_objectcode : 목적코드를 저장
+				// temp_operator : Operator Mnemonic 저장
+				// temp_operand : Operand Mnemonic 저장
 				temp_objectcode[x] = IMRArray[loop]->ObjectCode;
 				strcpy(temp_operator[x], IMRArray[loop]->OperatorField);
 				strcpy(temp_operand[x], IMRArray[loop]->OperandField);
-				last_index = loop + 1;
-				x++;
+				last_index = loop + 1;	// 한줄에 표현할 수 있는 목적코드의 길이를 계산하기 위해 저장
+				x++; // 명령어 갯수 1 증가
 			}
-			else;
-			temp_address = IMRArray[loop + 1]->Loc;
+			temp_address = IMRArray[loop + 1]->Loc;	// 다음번 명령어의 시작점이 한계점인지 검사하기 위한 저장
 		}
 
+		// 텍스트 레코드로 한줄의 시작주소와 목적코드의 길이 계산해서 출력
+		// 콘솔창과 파일에 모두 출력
 		printf("T%06X%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
 		fprintf(fptr_obj, "T^%06X^%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
 
-		for (xx = 0; xx<x; xx++)
-		{
+		for (xx = 0; xx<x; xx++) {
+			// 한줄에 들어갈 수 있는 최대의 목적코드를 출력하기 위한 반복문
+			// 콘솔창과 파일에 모두 출력
 			if ((strcmp(temp_operator[xx], "BYTE") == 0) && (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x')) {
+				// 16진수로 표현한 1바이트의 값일 경우 1바이트의 형식에 맞춰 출력
 				printf("%02X", temp_objectcode[xx]);
 				fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
 			}
 			else {
-				printf("%06X", temp_objectcode[xx]);
-				fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+				// 명령어의 형식에 따라 달라지는 길이에 맞춰서 출력
+				if (SearchOptab(temp_operator[xx])) {
+					// operator가 OPTAB에 존재할 경우
+					if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
+						if (ReadFlag(temp_operator[xx])) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
+							// 4형식일 때 4바이트에 출력
+							printf("%08X", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%08X", temp_objectcode[xx]);
+						}
+						else {
+							// 3형식일 때 3바이트에 출력
+							printf("%06X", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+						}
+					}
+					else if (OPTAB[Counter].Format == '2') {
+						// 2형식 명령어의 경우 2바이트에 출력
+						printf("%04X", temp_objectcode[xx]);
+						fprintf(fptr_obj, "^%04X", temp_objectcode[xx]);
+					}
+					else if (OPTAB[Counter].Format == '1') {
+						// 1형식 명령어의 경우 1바이트에 출력
+						printf("%02X", temp_objectcode[xx]);
+						fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
+					}
+				} else {
+					// 명령어가 아닐 경우 기본 3바이트 형식에 맞춰 출력
+					printf("%06X", temp_objectcode[xx]);
+					fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+				}
 			}
 		}
 
+		// 한줄 출력이 끝난 후 개행
+		// 콘솔창과 파일에 모두 출력
 		printf("\n");
 		fprintf(fptr_obj, "\n");
 
-		if (!strcmp(IMRArray[loop]->OperatorField, "END"))
+		if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
 			break;
 	}
 
+	// 엔드 레코드를 통해 프로그램의 시작주소를 출력
+	// 콘솔창과 파일에 모두 출력
 	printf("E%06X\n\n", start_address);
 	fprintf(fptr_obj, "E^%06X\n\n", start_address);
-	fclose(fptr_obj);
+
+	fclose(fptr_obj);	// obj 파일 쓰기 종료
 }
 
 /******************************* MAIN FUNCTION *******************************/
