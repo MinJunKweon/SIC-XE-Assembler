@@ -3,6 +3,11 @@
 #include <string.h>	// 문자열 관리를 위함
 #include <malloc.h>	// 동적할당을 위함
 
+// 명령어, 피연산자 앞에 붙어있는 기호들을 알아보기 쉽도록 define
+#define PLUS 1
+#define SHARP 2
+#define AT 3
+
 #define TEST_FNAME "x:\\2.asm"
 
 /***************************** DECLERATE VARIABLE ****************************/
@@ -150,13 +155,13 @@ int ReadFlag(char *Mnemonic) {	// Mnemonic에서 플래그 비트 읽기
 	Flag = 0;
 	switch (Mnemonic[0]) {	// Mnemonic의 첫번째 글자가 특수문자일경우
 	case '+':
-		Flag = 1;	// extended instruction
+		Flag = PLUS;	// extended instruction
 		break;
 	case '#':
-		Flag = 2;	// immediate addressing mode
+		Flag = SHARP;	// immediate addressing mode
 		break;
 	case '@':
-		Flag = 3;	// indirect addressing mode
+		Flag = AT;	// indirect addressing mode
 		break;
 	default:
 		Flag = 0;	// default (아무런 표시가 없을 경우)
@@ -468,6 +473,7 @@ void main(void)
 	int loader_flag = 0;
 	int start_line = 0;
 
+	// Intro Part
 	printf(" ******************************************************************************\n");
 	printf(" * Program: SIC ASSEMBYER                                                     *\n");
 	printf(" *                                                                            *\n");
@@ -659,10 +665,10 @@ void main(void)
 					printf("ERROR: Invalid Addressing Mode\n");
 					exit(1);
 				}
-				if (Flag == 2) {	// Immediate Addressing Mode
+				if (Flag == SHARP) {	// Immediate Addressing Mode
 					inst_fmt_sign = 0x010000;
 				}
-				else if (Flag == 3) {	// Indirect Addressing Mode
+				else if (Flag == AT) {	// Indirect Addressing Mode
 					inst_fmt_sign = 0x020000;
 				}
 				inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
@@ -673,13 +679,15 @@ void main(void)
 			}
 			
 			if (inst_fmt_byte >= 3) {
+				// 3/4형식 명령어 일경우
 				if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {	// index addressing Mode
 					inst_fmt_index = 0x008000;	// index addressing mode 플래그 비트 x에 1
-					inst_fmt_index <<= 8 * (inst_fmt_byte - 3);
-					operand[strlen(operand) - 2] = '\0';
+					inst_fmt_index <<= 8 * (inst_fmt_byte - 3);	// 4형식 명령어의 경우 8비트씩 왼쪽으로 이동
+					operand[strlen(operand) - 2] = '\0';	// ,X 부분 삭제
 				}
 
 				if (SearchSymtab(operand)) {
+					// 심볼테이블에서 해당 피연산자를 찾을 수 있을 경우
 					if (inst_fmt_byte == 4) {	// extended instruction의 주소 지정
 						inst_fmt_address = SYMTAB[SymIdx].Address;
 					}
@@ -697,11 +705,13 @@ void main(void)
 						else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
 							// base relative addressing mode에 기반하여 변위 다시 계산
 							diff = SYMTAB[SymIdx].Address - base_register;
-							if (diff >= 0 && diff < 4096) {
+							if (diff >= 0 && diff < 4096) {	// Base relative addressing mode가 가능할경우
+								// base relative addressing mode로 어셈블
 								inst_fmt_address = 0x004000;
 								inst_fmt_address += diff;
 							}
 							else {
+								// pc 혹은 base relative addressing mode로 어셈블 불가할 경우 예외처리
 								fclose(fptr);
 								printf("ERROR: CANNOT present relative addressing mode[line : %d]\n", IMRArray[loop]->LineIndex);
 								exit(1);
@@ -710,10 +720,13 @@ void main(void)
 					}
 				}
 				else {
-					if (isNum(operand)) {
-						inst_fmt_address = StrToDec(operand);
+					// 심볼테이블에서 피연산자를 찾을 수 없을 때
+					ReadFlag(operand);	// 피연산자에 붙어있는 플래그가 #인지 검사하기위함 
+					if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
+						inst_fmt_address = StrToDec(operand);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
 					}
 					else {
+						// 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
 						fclose(fptr);
 						printf("ERROR: Label isn't exist [%s]\n", operand);
 						exit(1);
@@ -752,7 +765,10 @@ void main(void)
 					}
 				} while (operand[i++] != '\0');
 
-				if (!strcmp(OPTAB[Counter].Mnemonic, "CLEAR") || !strcmp(OPTAB[Counter].Mnemonic, "TIXR") || !strcmp(OPTAB[Counter].Mnemonic, "SVC")) {
+				if (!strcmp(OPTAB[Counter].Mnemonic, "CLEAR")
+					|| !strcmp(OPTAB[Counter].Mnemonic, "TIXR")
+					|| !strcmp(OPTAB[Counter].Mnemonic, "SVC")) {
+					// 피연산자 형식이 다른 특정 명령어들에 한해 예외처리
 					// 피연산자가 1개 일경우 기록후 4비트 왼쪽으로 이동
 					inst_fmt_address <<= 4;
 				}
@@ -763,13 +779,16 @@ void main(void)
 			IMRArray[loop]->ObjectCode = inst_fmt;
 		}
 		else if (!strcmp(opcode, "WORD")) {
+			// 1 WORD의 크기에 10진수 대입
 			strcpy(operand, IMRArray[loop]->OperandField);
 			IMRArray[loop]->ObjectCode = StrToDec(operand);
 		}
 		else if (!strcmp(opcode, "BYTE")) {
+			// 1 Byte의 값을 여러개 혹은 한개 대입 (ASCII code 혹은 16진수)
 			strcpy(operand, IMRArray[loop]->OperandField);
 			IMRArray[loop]->ObjectCode = 0;
 
+			// 값이 ASCII code일 경우 값 계산후 objectcode에 대입
 			if (operand[0] == 'C' || operand[0] == 'c' && operand[1] == '\'') {
 				for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
 					IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + (int)operand[x];
@@ -777,6 +796,7 @@ void main(void)
 				}
 			}
 
+			// 값이 16진수일 경우 값 계산후 objectcode에 대입
 			if (operand[0] == 'X' || operand[0] == 'x' && operand[1] == '\'') {
 				char *operand_ptr;
 				operand_ptr = &operand[2];
@@ -787,15 +807,16 @@ void main(void)
 				}
 			}
 
-			IMRArray[loop]->ObjectCode >>= 8;
+			IMRArray[loop]->ObjectCode >>= 8;	// 각 반복문 맨마지막에 1바이트 밀었던 것을 다시 원위치로 변경
 		}
 		else if (!strcmp(opcode, "BASE")) {
+			// BASE 어셈블러 지시자일 경우 해당 위치를 base 레지스터에 넣고 base relative addressing mode의 기준점으로 삼음
 			strcpy(operand, IMRArray[loop]->OperandField);
 			IMRArray[loop]->ObjectCode = 0;
 			if (SearchSymtab(operand)) {
 				base_register = SYMTAB[SymIdx].Address;
-			}
-			else {	// SymTab에 없기 때문에 오류로 처리하고 프로그램 종료 
+			} else {
+				// 피연산자가 SymTab에 없기 때문에 오류로 처리하고 프로그램 종료 
 				fclose(fptr);
 				printf("ERROR: No Label in SYMTAB[%s]\n", operand);
 				exit(1);
@@ -818,7 +839,7 @@ void main(void)
 		free(IMRArray[loop]);
 
 	printf("Compeleted Assembly\n");
-	fclose(fptr);
+	fclose(fptr); // 소스코드 파일 읽기 종료
 
 	exit(0);	// exit을 안해서 프로그램이 비정상적으로 종료되는 버그 수정
 }
