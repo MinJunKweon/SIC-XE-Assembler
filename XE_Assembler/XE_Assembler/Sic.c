@@ -326,39 +326,48 @@ void CreateProgramList() {	// 리스트 파일 생성
 	}
 
 	// 리스트 파일 내용 출력
-	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");
+	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");	// 각 Column 들의 제목
 	for (loop = 0; loop<ArrayIndex; loop++)
 	{
 		len = 0;
-		fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);
-		if (!strcmp(IMRArray[loop]->OperatorField, "START") || !strcmp(IMRArray[loop]->OperatorField, "RESW") || !strcmp(IMRArray[loop]->OperatorField, "RESB") || !strcmp(IMRArray[loop]->OperatorField, "BASE") || !strcmp(IMRArray[loop]->OperatorField, "END"))
+		fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);	// 모든 코드들의 공통되는 부분
+		if (!strcmp(IMRArray[loop]->OperatorField, "START")
+			|| !strcmp(IMRArray[loop]->OperatorField, "RESW")
+			|| !strcmp(IMRArray[loop]->OperatorField, "RESB")
+			|| !strcmp(IMRArray[loop]->OperatorField, "BASE")
+			|| !strcmp(IMRArray[loop]->OperatorField, "END")
+			|| !strcmp(IMRArray[loop]->OperatorField, "EXTREF")
+			|| !strcmp(IMRArray[loop]->OperatorField, "EXTDEF"))
+			// Object code 출력이 필요없는 부분들 object code 생략
 			fprintf(fptr_list, "\n");
 		else if (SearchOptab(IMRArray[loop]->OperatorField)) {
-			if (OPTAB[Counter].Format == '3') {
-				if (ReadFlag(IMRArray[loop]->OperatorField)) {
-					fprintf(fptr_list, "%08x\n", IMRArray[loop]->ObjectCode);
+			// operator가 OPTAB에 존재할 경우
+			if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
+				if (ReadFlag(IMRArray[loop]->OperatorField)) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
+					fprintf(fptr_list, "%08x\n", IMRArray[loop]->ObjectCode);	// 4형식일 때 4바이트 출력
 				} else {
-					fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);
+					fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);	// 3형식일 때 3바이트 출력
 				}
-			} else if (OPTAB[Counter].Format == '2') {
-				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);
-			} else if (OPTAB[Counter].Format == '1') {
-				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);
+			} else if (OPTAB[Counter].Format == '2') {	// 해당 명령어가 2형식 명령어일 경우
+				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+			} else if (OPTAB[Counter].Format == '1') {	// 해당 명령어가 1형식 명령어일 경우
+				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
 			}
 		} else {
-			len = (strlen(IMRArray[loop]->OperandField)-3)/2;	// C, ', ' 혹은 X, ', '를 제외한 것들이 몇바이트인지 계산하기 위함
-			if (len == 1) {
-				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);
-			} else if (len == 2) {
-				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);
-			} else if (len == 3) {
-				fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);
+			// C'XX' 혹은 X'XX' 일때 예외처리
+			len = (strlen(IMRArray[loop]->OperandField)-3)/2;	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
+			if (len == 1) {	// 1바이트의 경우
+				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
+			} else if (len == 2) {	// 2바이트의 경우
+				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+			} else if (len == 3) {	// 3바이트의 경우
+				fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
 			} else {
-				fprintf(fptr_list, "\n");
+				fprintf(fptr_list, "\n");	// 그외의 경우 object code 생략
 			}
 		}
 	}
-	fclose(fptr_list);
+	fclose(fptr_list);	// 리스트 파일 출력이 종료되어서 파일 저장
 }
 
 void CreateObjectCode() {	// 목적파일 생성
@@ -489,7 +498,7 @@ void main(void)
 
 	/********************************** PASS 1 ***********************************/
 	printf("Pass 1 Processing...\n");
-	while (fgets(Buffer, 256, fptr) != NULL)	// 소스코드 파일에서 읽기
+	while (fgets(Buffer, 256, fptr) != NULL)	// 소스코드 파일에서 코드 읽기
 	{
 		is_empty_line = strlen(Buffer);
 
@@ -503,6 +512,7 @@ void main(void)
 
 		if (is_empty_line>1 && is_comment != 1)
 		{
+			// 인덱스 변수들 초기화
 			Index = 0;
 			j = 0;
 
@@ -748,6 +758,7 @@ void main(void)
 				}
 			}
 
+			// Object Code 병합
 			inst_fmt = inst_fmt_opcode + inst_fmt_sign + inst_fmt_index + inst_fmt_relative + inst_fmt_extended + inst_fmt_address;
 			IMRArray[loop]->ObjectCode = inst_fmt;
 		}
