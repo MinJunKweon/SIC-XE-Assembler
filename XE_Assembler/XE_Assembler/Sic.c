@@ -422,7 +422,12 @@ void CreateObjectCode() {	// 목적파일 생성
 
 			if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만나면 for문 탈출
 				break;
-			else if (strcmp(IMRArray[loop]->OperatorField, "RESB") && strcmp(IMRArray[loop]->OperatorField, "RESW") && strcmp(IMRArray[loop]->OperatorField, "BASE")) {
+			else if (strcmp(IMRArray[loop]->OperatorField, "RESB")
+				&& strcmp(IMRArray[loop]->OperatorField, "RESW")
+				&& strcmp(IMRArray[loop]->OperatorField, "BASE")
+				&& strcmp(IMRArray[loop]->OperatorField, "NOBASE")
+				&& strcmp(IMRArray[loop]->OperatorField, "EXTREF")
+				&& strcmp(IMRArray[loop]->OperatorField, "EXTDEF")) {
 				// 목적코드가 없는 어셈블러 지시자를 제외한 나머지들을 출력하기 위해 저장
 				// temp_objectcode : 목적코드를 저장
 				// temp_operator : Operator Mnemonic 저장
@@ -673,7 +678,7 @@ void main(void)
 	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
 	
 	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
-	int base_register = 0;
+	int base_register = -1;	// BASE 어셈블러 지시자가 나오지 않을 경우 base relative addressing mode를 사용하지 못하게 하도록 하기 위한 기본값 -1
 
 	for (loop = 1; loop<ArrayIndex; loop++) {	// 중간파일을 순차적으로 읽음
 		// 각 변수들 초기화
@@ -750,7 +755,7 @@ void main(void)
 						else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
 							// base relative addressing mode에 기반하여 변위 다시 계산
 							diff = SYMTAB[SymIdx].Address - base_register;
-							if (diff >= 0 && diff < 4096) {	// Base relative addressing mode가 가능할경우
+							if (base_register != -1 && diff >= 0 && diff < 4096) {	// Base relative addressing mode가 가능할경우
 								// base relative addressing mode로 어셈블
 								inst_fmt_address = 0x004000;
 								inst_fmt_address += diff;
@@ -866,6 +871,12 @@ void main(void)
 				printf("ERROR: No Label in SYMTAB[%s]\n", operand);
 				exit(1);
 			}
+		}
+		else if (!strcmp(opcode, "NOBASE")) {
+			strcpy(operand, IMRArray[loop]->OperandField);
+			IMRArray[loop]->ObjectCode = 0;
+			// base register 해제
+			base_register = -1;
 		}
 		else if (!strcmp(opcode, "EXTDEF")) {
 			
