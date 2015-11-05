@@ -119,7 +119,7 @@ static SIC_OPTAB OPTAB[] =
 	{ "MUL",  '3',  0x20 },
 	{ "OR",  '3',  0x44 },
 	{ "RD",  '3',  0xD8 },
-	{ "RSUB",  '3',  0x4C },
+	{ "RSUB",  '3',  0x4F },
 	{ "STA",  '3',  0x0C },
 	{ "STCH",  '3',  0x54 },
 	{ "STL",  '3',  0x14 },
@@ -247,6 +247,15 @@ int isNum(char * str) {	// 문자열을 이루고 있는 모든 원소들이 숫자로 이루어져있�
 	return 1;	// 모두 숫자이므로 1을 반환
 }
 
+unsigned long ConvertDiffForAddress(short diff) {
+	if (diff >= 0) { // 양수이므로 그대로 반환
+		return diff;
+	}
+	// 음수일경우 자료형의 크기가 12비트라고 가정하고 2's completion을 진행
+	diff ^= 0xF000;	// 12비트 이후의 bit를 제거하기 위해서 총 16비트의 short형의 뒤 4비트를 0으로 만든다
+	return diff;
+}
+
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
 	if (ReadFlag(c)) {	// 플래그비트를 생략하기위함.
 		c += 1;
@@ -319,10 +328,15 @@ void CreateProgramList() {	// 리스트 파일 생성
 	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");
 	for (loop = 0; loop<ArrayIndex; loop++)
 	{
-		if (!strcmp(IMRArray[loop]->OperatorField, "START") || !strcmp(IMRArray[loop]->OperatorField, "RESW") || !strcmp(IMRArray[loop]->OperatorField, "RESB") || !strcmp(IMRArray[loop]->OperatorField, "END"))
+		if (!strcmp(IMRArray[loop]->OperatorField, "START") || !strcmp(IMRArray[loop]->OperatorField, "RESW") || !strcmp(IMRArray[loop]->OperatorField, "RESB") || !strcmp(IMRArray[loop]->OperatorField, "BASE") || !strcmp(IMRArray[loop]->OperatorField, "END"))
 			fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);
-		else
-			fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t%06x\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField, IMRArray[loop]->ObjectCode);
+		else if (SearchOptab(IMRArray[loop]->OperatorField)) {
+			if (OPTAB[Counter].Format == '3') {
+				fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t%06x\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField, IMRArray[loop]->ObjectCode);
+			} else {
+				fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t%02x\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField, IMRArray[loop]->ObjectCode);
+			}
+		}
 	}
 	fclose(fptr_list);
 }
@@ -360,7 +374,6 @@ void CreateObjectCode() {	// 목적파일 생성
 
 	while (1)
 	{
-
 		first_address = IMRArray[loop]->Loc;
 		last_address = IMRArray[loop]->Loc + 27;
 		first_index = loop;
@@ -369,7 +382,7 @@ void CreateObjectCode() {	// 목적파일 생성
 		{
 			if (!strcmp(IMRArray[loop]->OperatorField, "END"))
 				break;
-			else if (strcmp(IMRArray[loop]->OperatorField, "RESB") && strcmp(IMRArray[loop]->OperatorField, "RESW"))
+			else if (strcmp(IMRArray[loop]->OperatorField, "RESB") && strcmp(IMRArray[loop]->OperatorField, "RESW") && strcmp(IMRArray[loop]->OperatorField, "BASE"))
 			{
 				temp_objectcode[x] = IMRArray[loop]->ObjectCode;
 				strcpy(temp_operator[x], IMRArray[loop]->OperatorField);
@@ -534,15 +547,13 @@ void main(void)
 						LOCCTR[LocctrCounter] = loc + StrToDec(operand);
 					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
-					else {	// 정의되지 않은 OP code일 경우 경고후 프로그램 종료
-						if (!strcmp(opcode, "BASE")) {
+					else if (!strcmp(opcode, "BASE")) {
 							LOCCTR[LocctrCounter] = loc;	// BASE Assembler Directive일 경우 Loc을 대입
-						}
-						else {
-							fclose(fptr);
-							printf("ERROR: Invalid Operation Code\n");
-							exit(1);
-						}
+					}
+					else { // 정의되지 않은 OP code일 경우 경고후 프로그램 종료
+						fclose(fptr);
+						printf("ERROR: Invalid Operation Code\n");
+						exit(1);
 					}
 				}
 			}
@@ -579,7 +590,7 @@ void main(void)
 	int inst_fmt_byte;		// 몇형식 명령어인지 나타내는 변수 (바이트 수)
 	int i, regCharIdx;
 	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
-
+	
 	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
 	int base_register = 0;
 
@@ -597,6 +608,11 @@ void main(void)
 		strcpy(opcode, IMRArray[loop]->OperatorField);	// op code 부분 복사
 
 		if (SearchOptab(opcode)) {	// opcode 찾기
+			if (!strcmp(OPTAB[Counter].Mnemonic, "RSUB")) {
+				// RSUB는 3형식 명령어이지만 상관이 없으므로
+				IMRArray[loop]->ObjectCode = (OPTAB[Counter].ManchineCode << 16);
+				continue;
+			}
 			inst_fmt_opcode = OPTAB[Counter].ManchineCode;	// opcode의 목적코드 복사
 			inst_fmt_byte = OPTAB[Counter].Format - '0';	// 해당 명령어가 몇 바이트를 사용하는 지 저장
 			if (inst_fmt_byte == 3 && ReadFlag(opcode)) {	// 만약 4형식 명령어일 경우 분기처리
@@ -640,18 +656,26 @@ void main(void)
 					else {	// relative Addressing mode
 						// PC의 값 저장
 						// 명령어 실행 시점에서 PC의 값 계산 (다음 명령어의 메모리 위치)
-						diff = SYMTAB[SymIdx].Address - IMRArray[loop]->Loc + inst_fmt_byte;
-						if (diff < 0 || diff < 2048) {
+						diff = SYMTAB[SymIdx].Address - IMRArray[loop]->Loc - inst_fmt_byte;
+						if (diff >= -2048 && diff < 2048) {
 							// pc relative일 경우
-							if (fabs(diff) > 2048) {	// 변위에 절대값을 취했을 때 값이 11비트로 표현이 불가능하면
-								// pc relative로 표현 불가능하므로 ERROR로 처리
-								fclose(fptr);
-								printf("ERROR: CANNOT present pc relative addressing mode\n");
-								exit(1);
-							}
-							// 정상적으로 표현 가능 할 경우
 							// 음수면 12비트로 표현해야하므로 12비트의 음수로 변환해주기 위한 함수 호출
 							// 음수가 아니라면 함수 로직 내에서 그대로 반환되므로 음수가 아니어도 함수는 호출
+							inst_fmt_address = 0x002000;
+							inst_fmt_address += ConvertDiffForAddress(diff);
+						}
+						else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
+							// base relative addressing mode에 기반하여 변위 다시 계산
+							diff = SYMTAB[SymIdx].Address - base_register;
+							if (diff >= 0 && diff < 4096) {
+								inst_fmt_address = 0x004000;
+								inst_fmt_address += diff;
+							}
+							else {
+								fclose(fptr);
+								printf("ERROR: CANNOT present relative addressing mode[line : %d]\n", IMRArray[loop]->LineIndex);
+								exit(1);
+							}
 						}
 					}
 				}
@@ -671,16 +695,25 @@ void main(void)
 				do {	// 피연산자를 읽어 레지스터들에 맞는 목적코드 작성
 					if (operand[i] == ',' || operand[i] == '\0') {	// 앞서 나온 레지스터를 읽을 준비가 되었을 경우
 						regName[regCharIdx] = '\0';	// 단순 문자배열을 문자열로 끊고
-						if (SearchRegTab(regName)) {	// 미리 정의된 레지스터 테이블에서 읽음
-							if (inst_fmt_address != 0) {	// 기존에 기록된 레지스터의 아이디가 존재할경우 4비트를 왼쪽으로 밀고 기록
-								inst_fmt_address <<= 4;
-							}
-							inst_fmt_address += REG_TAB[RegIdx].id;	// 레지스터 테이블에 해당 레지스터가 있을 경우 그 아이디를 목적코드에 추가
+						if (operand[i] == ',') {	// 기존에 기록된 레지스터의 아이디가 존재할경우 4비트를 왼쪽으로 밀고 기록
+							inst_fmt_address <<= 4;
 						}
-						else {	// RegTab에 없기 때문에 오류로 처리하고 프로그램 종료 
-							fclose(fptr);
-							printf("ERROR: Invalid Register\n");
-							exit(1);
+
+						if (SearchRegTab(regName)) {	// 미리 정의된 레지스터 테이블에서 읽음
+							inst_fmt_address += REG_TAB[RegIdx].id;	// 레지스터 테이블에 해당 레지스터가 있을 경우 그 아이디를 목적코드에 추가 
+						}
+						else { 
+							if (!strcmp(OPTAB[Counter].Mnemonic, "SVC") || !strcmp(OPTAB[Counter].Mnemonic, "SHIFTL") || !strcmp(OPTAB[Counter].Mnemonic, "SHIFTR")) {
+								// 피연산자로 레지스터를 사용하지않고 숫자를 사용하는 경우
+								if (isNum(regName)) {	// 피연산자가 숫자라면
+									inst_fmt_address += StrToDec(regName);	// 추가
+								}
+							}
+							else { // RegTab에 없기 때문에 오류로 처리하고 프로그램 종료
+								fclose(fptr);
+								printf("ERROR: Invalid Register\n");
+								exit(1);
+							}
 						}
 						regCharIdx = 0;	// 인덱스 변수 초기화
 					}
@@ -688,6 +721,11 @@ void main(void)
 						regName[regCharIdx++] = operand[i];	// 레지스터 이름 저장
 					}
 				} while (operand[i++] != '\0');
+
+				if (!strcmp(OPTAB[Counter].Mnemonic, "CLEAR") || !strcmp(OPTAB[Counter].Mnemonic, "TIXR") || !strcmp(OPTAB[Counter].Mnemonic, "SVC")) {
+					// 피연산자가 1개 일경우 기록후 4비트 왼쪽으로 이동
+					inst_fmt_address <<= 4;
+				}
 			}
 
 			inst_fmt = inst_fmt_opcode + inst_fmt_sign + inst_fmt_index + inst_fmt_relative + inst_fmt_extended + inst_fmt_address;
@@ -721,7 +759,16 @@ void main(void)
 			IMRArray[loop]->ObjectCode >>= 8;
 		}
 		else if (!strcmp(opcode, "BASE")) {
-			base_register = IMRArray[loop]->Loc;
+			strcpy(operand, IMRArray[loop]->OperandField);
+			IMRArray[loop]->ObjectCode = 0;
+			if (SearchSymtab(operand)) {
+				base_register = SYMTAB[SymIdx].Address;
+			}
+			else {	// SymTab에 없기 때문에 오류로 처리하고 프로그램 종료 
+				fclose(fptr);
+				printf("ERROR: No Label in SYMTAB[%s]\n", operand);
+				exit(1);
+			}
 		}
 		else if (!strcmp(opcode, "EXTDEF")) {
 			
