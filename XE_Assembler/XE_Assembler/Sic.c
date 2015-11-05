@@ -314,6 +314,7 @@ int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
 
 void CreateProgramList() {	// 리스트 파일 생성
 	int loop;
+	int len;	// 문자나 16진수일 경우 길이 계산을 위한 변수
 	FILE *fptr_list;
 
 	fptr_list = fopen("sic.list", "w");
@@ -328,13 +329,32 @@ void CreateProgramList() {	// 리스트 파일 생성
 	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");
 	for (loop = 0; loop<ArrayIndex; loop++)
 	{
+		len = 0;
+		fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);
 		if (!strcmp(IMRArray[loop]->OperatorField, "START") || !strcmp(IMRArray[loop]->OperatorField, "RESW") || !strcmp(IMRArray[loop]->OperatorField, "RESB") || !strcmp(IMRArray[loop]->OperatorField, "BASE") || !strcmp(IMRArray[loop]->OperatorField, "END"))
-			fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);
+			fprintf(fptr_list, "\n");
 		else if (SearchOptab(IMRArray[loop]->OperatorField)) {
 			if (OPTAB[Counter].Format == '3') {
-				fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t%06x\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField, IMRArray[loop]->ObjectCode);
+				if (ReadFlag(IMRArray[loop]->OperatorField)) {
+					fprintf(fptr_list, "%08x\n", IMRArray[loop]->ObjectCode);
+				} else {
+					fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);
+				}
+			} else if (OPTAB[Counter].Format == '2') {
+				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);
+			} else if (OPTAB[Counter].Format == '1') {
+				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);
+			}
+		} else {
+			len = (strlen(IMRArray[loop]->OperandField)-3)/2;	// C, ', ' 혹은 X, ', '를 제외한 것들이 몇바이트인지 계산하기 위함
+			if (len == 1) {
+				fprintf(fptr_list, "%02x\n", IMRArray[loop]->ObjectCode);
+			} else if (len == 2) {
+				fprintf(fptr_list, "%04x\n", IMRArray[loop]->ObjectCode);
+			} else if (len == 3) {
+				fprintf(fptr_list, "%06x\n", IMRArray[loop]->ObjectCode);
 			} else {
-				fprintf(fptr_list, "%04x\t%-10s%-10s%-10s\t%02x\n", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField, IMRArray[loop]->ObjectCode);
+				fprintf(fptr_list, "\n");
 			}
 		}
 	}
@@ -635,17 +655,17 @@ void main(void)
 				else if (Flag == 3) {	// Indirect Addressing Mode
 					inst_fmt_sign = 0x020000;
 				}
-				inst_fmt_sign <<= 3 - inst_fmt_byte;	// 바이트 수 만큼 왼쪽으로 Shift
+				inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
 			}
 			else if (inst_fmt_byte >= 3) {	// 3/4형식 명령어 Simple Addressing Mode
 				inst_fmt_sign = 0x030000;
-				inst_fmt_sign <<= 3 - inst_fmt_byte;	// 바이트 수 만큼 왼쪽으로 Shift
+				inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
 			}
 			
 			if (inst_fmt_byte >= 3) {
 				if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {	// index addressing Mode
 					inst_fmt_index = 0x008000;	// index addressing mode 플래그 비트 x에 1
-					inst_fmt_index <<= 3 - inst_fmt_byte;
+					inst_fmt_index <<= 8 * (inst_fmt_byte - 3);
 					operand[strlen(operand) - 2] = '\0';
 				}
 
