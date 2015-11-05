@@ -340,6 +340,30 @@ int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
 	return (b);
 }
 
+void CreateSymbolTable() {	// 심볼테이블 파일 생성
+	int loop;
+	FILE *fptr_sym;
+	fptr_sym = fopen("symtab.list", "w");	// 심볼테이블 파일을 쓰기 형태로 엶
+
+	if (fptr_sym == NULL)
+	{
+		printf("ERROR: Unable to open the symtab.list.\n");	// 심볼테이블 파일을 쓸 수 없을 경우 예외처리
+		exit(1);
+	}
+	
+	// 각 Column 들의 제목을 출력
+	// 콘솔창과 파일에 모두 출력
+	printf("%-10s\t%-4s\n", "LABEL", "LOC");
+	fprintf(fptr_sym, "%-10s\t%-4s\n", "LABEL", "LOC");
+	for (loop = 0; loop < SymtabCounter; loop++) {
+		// 심볼테이블의 레코드들을 각각 출력
+		// 콘솔창과 파일에 모두 출력
+		printf("%-10s\t%04X\n", SYMTAB[loop].Label, SYMTAB[loop].Address);
+		fprintf(fptr_sym, "%-10s\t%04X\n", SYMTAB[loop].Label, SYMTAB[loop].Address);
+	}
+	fclose(fptr_sym);	// 파일 출력이 끝났으므로 close
+}
+
 void CreateProgramList() {	// 리스트 파일 생성
 	int loop;
 	int len;	// 문자나 16진수일 경우 길이 계산을 위한 변수
@@ -691,11 +715,10 @@ void main(void)
 	program_length = LOCCTR[LocctrCounter - 2] - LOCCTR[0];
 	// END 지시자를 만났을 경우 END 지시자 바로 이전 소스코드의 메모리 위치와 시작주소를 빼서 총 프로그램 길이 계산
 
-	/********************************** PASS 2 ***********************************/
-	for (int dd = 0; dd < SymtabCounter; dd++) {
-		printf("%7s:%8X\n", SYMTAB[dd].Label, SYMTAB[dd].Address);
-	}
+	// Pass 1에서 생성된 심볼테이블 출력
+	CreateSymbolTable();
 
+	/********************************** PASS 2 ***********************************/
 	printf("Pass 2 Processing...\n");
 
 	unsigned long inst_fmt;		// 최종 목적 코드
