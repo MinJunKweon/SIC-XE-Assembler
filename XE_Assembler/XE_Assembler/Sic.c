@@ -148,45 +148,45 @@ void SkipSpace() {	// 공백 스킵하기 (Index를 뒤로 옮김)
 
 int ReadFlag(char *Mnemonic) {	// Mnemonic에서 플래그 비트 읽기
 	Flag = 0;
-	switch (Mnemonic[0]) {
+	switch (Mnemonic[0]) {	// Mnemonic의 첫번째 글자가 특수문자일경우
 	case '+':
-		Flag = 1;
+		Flag = 1;	// extended instruction
 		break;
 	case '#':
-		Flag = 2;
+		Flag = 2;	// immediate addressing mode
 		break;
 	case '@':
-		Flag = 3;
+		Flag = 3;	// indirect addressing mode
 		break;
 	default:
-		Flag = 0;
+		Flag = 0;	// default (아무런 표시가 없을 경우)
 	}
 	return Flag;
 }
 
 char* ReadOprator() {	// Mnemonic 읽기
 	j = 0;//zeroing
-	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')
+	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')	// 공백이 나올때까지 Mnemonic 읽기
 		Mnemonic[j++] = Buffer[Index++];
-	Mnemonic[j] = '\0';
-	return(Mnemonic);
+	Mnemonic[j] = '\0';	// 단순 문자배열을 문자열로 인식하도록 널 문자 추가
+	return(Mnemonic);	// 문자열 반환
 }
 
 char* ReadOperand() {	// 피연산자 읽기
 	j = 0;//zeroing
-	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')
+	while (Buffer[Index] != ' ' && Buffer[Index] != '\t' && Buffer[Index] != '\n')	// 공백이 나올때까지 Operand 읽기
 		Operand[j++] = Buffer[Index++];
-	Operand[j] = '\0';
-	return(Operand);
+	Operand[j] = '\0';	// 단순 문자배열을 문자열로 인식하도록 널 문자 추가
+	return(Operand);	// 문자열 반환
 }
 
 void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입력
 	if (ReadFlag(label)) { // Immediate or Indirect Addressing Mode 예외 처리
 		label = label + 1;
 	}
-	strcpy(SYMTAB[SymtabCounter].Label, label);
-	SYMTAB[SymtabCounter].Address = LOCCTR[LocctrCounter - 1];
-	SymtabCounter++;
+	strcpy(SYMTAB[SymtabCounter].Label, label);	// Symbol 테이블에 Label 추가
+	SYMTAB[SymtabCounter].Address = LOCCTR[LocctrCounter - 1];	// 해당 Label의 메모리 위치도 기록
+	SymtabCounter++;	// 1개 추가되었으므로 카운트 1증가
 }
 
 int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
@@ -195,10 +195,10 @@ int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 		label = label + 1;
 	}
 
-	for (int k = 0; k <= SymtabCounter; k++) {
-		if (!strcmp(SYMTAB[k].Label, label)) {
-			FoundOnSymtab_flag = 1;
-			SymIdx = k;
+	for (int k = 0; k <= SymtabCounter; k++) {	// 반복을 통해 찾기
+		if (!strcmp(SYMTAB[k].Label, label)) {	// label이 심볼테이블에 있을 경우
+			FoundOnSymtab_flag = 1;	// 찾았다는 의미를 표현하기위한 플래그
+			SymIdx = k;	// SymIdx는 심볼테이블에서 어느 위치에 있는지 가리킨다.
 			return (FoundOnSymtab_flag);
 		}
 	}
@@ -209,57 +209,57 @@ int SearchOptab(char * Mnemonic) {	// 심볼테이블에서 OP code 찾기
 	int size = sizeof(OPTAB) / sizeof(SIC_OPTAB);
 	FoundOnOptab_flag = 0;
 	if (ReadFlag(Mnemonic)) { // Extended Instruction일 경우 예외처리
-		Mnemonic = Mnemonic + 1;
+		Mnemonic = Mnemonic + 1;	// 문자열포인터를 1증가시킴. 맨앞자리 생략
 	}
 	for (int i = 0; i<size; i++) {
-		if (!strcmp(Mnemonic, OPTAB[i].Mnemonic)) {
+		if (!strcmp(Mnemonic, OPTAB[i].Mnemonic)) {	// OP 테이블에 해당 Mnemonic이 있을 경우
 			Counter = i;	// 있을 경우 Counter는 해당 OP code가 있는 OPTAB 상 Index 반환하기
-			FoundOnOptab_flag = 1;
+			FoundOnOptab_flag = 1;	// 찾았다는 의미를 표현하기위한 플래그
 			break;
 		}
 	}
-	return (FoundOnOptab_flag);
+	return (FoundOnOptab_flag);	// 없으면 0 반환
 }
 
-int SearchRegTab(char * Mnemonic) {
+int SearchRegTab(char * Mnemonic) {	// 미리 정의된 레지스터 테이블에서 해당 레지스터를 읽는다
 	int size = sizeof(REG_TAB) / sizeof(SIC_XE_REGISTER);
 	FoundOnRegTab_flag = 0;
 	for (int i = 0; i < size; i++) {
-		if (!strcmp(Mnemonic, REG_TAB[i].name)) {
-			RegIdx = i;
-			FoundOnRegTab_flag = 1;
+		if (!strcmp(Mnemonic, REG_TAB[i].name)) {	// 레지스터 테이블에 해당 레지스터의 기호가 있을 경우
+			RegIdx = i;	// 레지스터 테이블에서 어느 위치에 있는지 가리킴
+			FoundOnRegTab_flag = 1;	// 찾았다는 의미를 표현하기 위한 플래그
 			break;
 		}
 	}
-	return (FoundOnRegTab_flag);
+	return (FoundOnRegTab_flag);	// 없으면 0 반환
 }
 
-int isNum(char * str) {
-	if (ReadFlag(str)) {
+int isNum(char * str) {	// 문자열을 이루고 있는 모든 원소들이 숫자로 이루어져있는지 확인
+	if (ReadFlag(str)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
 		str += 1;
 	}
 	int i, len = strlen(str);
-	for (i = 0; i < len; ++i) {
-		if ('0' > str[i] || '9' < str[i]) {
+	for (i = 0; i < len; ++i) {	// 문자열 길이만큼 반복해서 모두 숫자인지 판단
+		if ('0' > str[i] || '9' < str[i]) {	// 숫자가 아닐 경우 0을 반환
 			return 0;
 		}
 	}
-	return 1;
+	return 1;	// 모두 숫자이므로 1을 반환
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
-	if (ReadFlag(c)) {
+	if (ReadFlag(c)) {	// 플래그비트를 생략하기위함.
 		c += 1;
 	}
 	int dec_num = 0;
 	char temp[10];
-	strcpy(temp, c);
+	strcpy(temp, c);	// temp에 문자열 복사
 
 	int len = strlen(c);
-	for (int k = len - 1, l = 1; k >= 0; k--)
+	for (int k = len - 1, l = 1; k >= 0; k--)	// 각 문자열을 거꾸로 읽어서 dec_num에 계산
 	{
 		dec_num = dec_num + (int)(temp[k] - '0')*l;
-		l = l * 10;
+		l = l * 10;	// 자리수를 계산하기위해 앞으로 나올 숫자들이 몇번째 자리인지 나타냄
 	}
 	return (dec_num);
 }
@@ -268,22 +268,23 @@ int StrToHex(char* c)	// 16진수를 표현하는 String을 정수형으로 변환해서 반환
 {
 	int hex_num = 0;
 	char temp[10];
-	strcpy(temp, c);
+	strcpy(temp, c);	// temp에 문자열 복사
 
 	int len = strlen(temp);
-	for (int k = len - 1, l = 1; k >= 0; k--)
+	for (int k = len - 1, l = 1; k >= 0; k--)	// 각 문자열을 거꾸로 읽어 16진수를 정수형으로 변환
 	{
 		if (temp[k] >= '0' && temp[k] <= '9')
 			hex_num = hex_num + (int)(temp[k] - '0')*l;
-		else if (temp[k] >= 'A' && temp[k] <= 'F')
+		else if (temp[k] >= 'A' && temp[k] <= 'F')	// 대문자 일경우
 			hex_num = hex_num + (int)(temp[k] - 'A' + 10)*l;
-		else if (temp[k] >= 'a' && temp[k] >= 'f')
+		else if (temp[k] >= 'a' && temp[k] >= 'f')	// 소문자 일경우
 			hex_num = hex_num + (int)(temp[k] - 'a' + 10)*l;
 		else;
-		l = l * 16;
+		l = l * 16; // 자리수를 계산하기위해 앞으로 나올 숫자들이 몇번째 자리인지 나타냄
 	}
 	return (hex_num);
 }
+
 int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
 	unsigned int b;
 	char len[32];
