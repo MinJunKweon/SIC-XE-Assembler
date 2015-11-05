@@ -11,27 +11,30 @@
 #define TEST_FNAME "x:\\2.asm"
 
 /***************************** DECLERATE VARIABLE ****************************/
-typedef struct OperationCodeTable
-{
+typedef struct OperationCodeTable {	// OP 테이블의 각각의 레코드 구조체
 	char Mnemonic[8];	// 명령어의 형상 (ex. LDB, LDA, etc...)
 	char Format;	// 명령어의 형식 (명령어의 길이)	3/4 형식은 편의상 3형식으로 표현하도록 설계했습니다.
 	unsigned short int  ManchineCode;	// 해당 명령어의 목적 코드
 }SIC_OPTAB;
 
-typedef struct SymbolTable
-{
+typedef struct SymbolTable { // 심볼테이블의 각각의 레코드 구조체
 	char Label[10];	// 레이블의 이름
 	int Address;	// 레이블이 가리키는 주소
 }SIC_SYMTAB;
 
 // 레지스터 테이블을 구성하는 레지스터 레코드
-typedef struct RegisterTable
-{
+typedef struct RegisterTable {
 	char name[3];	// 레지스터 Mnemonic
 	int id;	// 레지스터의 고유번호
 } SIC_XE_REGISTER;
 
-typedef struct IntermediateRecord {	// 중간파일
+// 수정레코드 작성을 위해 재배치가 필요한 부분을 담는 Dictionary 레코드
+typedef struct RelocationDictionary {
+	int Address;	// 재배치가 필요한 위치
+	int Nibbles;	// 재배치가 필요한 길이
+} RLD;
+
+typedef struct IntermediateRecord {	// 중간파일 구조
 	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
 	unsigned short int Loc;	//  해당 명령어의 메모리상 위치
 	unsigned long int ObjectCode;	//  Pass 2를 거쳐 Assemble된 목적코드
@@ -50,23 +53,25 @@ int Flag;
 int Index;
 int j;
 int ManchineCode;
-int SymtabCounter = 0;	// 심볼테이블의 갯수를 세고 가리키기 위한 변수
+int SymtabCounter = 0;	// 심볼테이블의 개수를 세고 가리키기 위한 변수
 int start_address;	// 프로그램의 시작 주소
 int program_length;	// 프로그램의 총 길이
 int ArrayIndex = 0;	// 중간파일을 각각 가리키기 위한 Index 변수
+int RLDCounter = 0;	// 재배치가 필요한 부분의 개수를 세고 가리키기 위한 변수 (수정 레코드)
 
 unsigned short int FoundOnSymtab_flag = 0;	// 해당 레이블을 심볼테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnRegTab_flag = 0;	// 레지스터 테이블에 해당 레지스터의 형상이 있는지 확인
 
+// 이 변수들은 모두 소스코드상의 표기법을 가짐
 char Buffer[256];	// 각 소스코드를 읽기위한 버퍼 변수
 char Label[32];	// 레이블을 임시로 저장하기 위한 변수
 char Mnemonic[32];	// Mnemnic을 임시로 저장하기 위한 변수
 char Operand[32];	// 피연산자를 임시로 저장하기 위한 변수
-// 이 변수들은 모두 소스코드상의 표기법을 가짐
 
 SIC_SYMTAB SYMTAB[20];	// 심볼테이블 변수
 IntermediateRec* IMRArray[100];	// 중간파일 변수
+RLD RLDArray[20];	// 재배치가 필요한 부분을 저장하기 위한 변수
 
 static SIC_XE_REGISTER REG_TAB[] =
 {
@@ -194,6 +199,15 @@ void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입�
 	SymtabCounter++;	// 1개 추가되었으므로 카운트 1증가
 }
 
+void RecordRLD(char* Mnemonic, int loc) {	// 재배치가 필요한 부분 RLDArray에 추가
+	RLDArray[RLDCounter].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
+	RLDArray[RLDCounter].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
+	if (ReadFlag(Mnemonic)) {	// 4형식일 경우 1바이트(2 니블)만큼 피연산자가 늘어나므로 추가
+		RLDArray[RLDCounter].Nibbles += 2;
+	}
+	RLDCounter++;	// RLDCounter에 개수 1증가
+}
+
 int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
 	if (ReadFlag(label)) { // Immediate Addressing Mode이거나 Indirect Addressing Mode일 경우 예외처리
@@ -300,20 +314,21 @@ int StrToHex(char* c)	// 16진수를 표현하는 String을 정수형으로 변환해서 반환
 }
 
 int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
-	unsigned int b;
+	unsigned int b;	// 길이를 저장하기위한 변수 (byte 단위)
 	char len[32];
 
 	strcpy(len, c);
-	if (len[0] == 'C' || len[0] == 'c' && len[1] == '\'') {
+	if (len[0] == 'C' || len[0] == 'c' && len[1] == '\'') {	// C'로 시작할 경우
 		for (b = 2; b <= strlen(len); b++) {
+			// 글자 읽기
 			if (len[b] == '\'') {
-				b -= 2;
+				b -= 2;	// 마지막 '를 만났을 경우 그 길이를 맨앞 C'의 두글자를 제외한 길이를 가지고 반복문 탈출
 				break;
 			}
 		}
 	}
-	if (len[0] == 'X' || len[0] == 'x' && len[1] == '\'')
-		b = 1;
+	if (len[0] == 'X' || len[0] == 'x' && len[1] == '\'')	// X'로 시작할 경우
+		b = 1;	// 무조건 1바이트
 	return (b);
 }
 
@@ -360,7 +375,7 @@ void CreateProgramList() {	// 리스트 파일 생성
 			}
 		} else {
 			// C'XX' 혹은 X'XX' 일때 예외처리
-			len = (strlen(IMRArray[loop]->OperandField)-3)/2;	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
+			len = ComputeLen(IMRArray[loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
 			if (len == 1) {	// 1바이트의 경우
 				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
 			} else if (len == 2) {	// 2바이트의 경우
@@ -497,6 +512,14 @@ void CreateObjectCode() {	// 목적파일 생성
 			break;
 	}
 
+	// 수정레코드 출력부분
+	for (loop = 0; loop < RLDCounter; loop++) {
+		// RLD의 모든 레코드들을 수정레코드로 출력
+		// 재배치가 필요함을 로더에게 알리기위함
+		printf("M%06X%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
+		fprintf(fptr_obj, "M^%06X^%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
+	}
+
 	// 엔드 레코드를 통해 프로그램의 시작주소를 출력
 	// 콘솔창과 파일에 모두 출력
 	printf("E%06X\n\n", start_address);
@@ -593,10 +616,7 @@ void main(void)
 					LOCCTR[LocctrCounter] = 0;
 					start_address = LOCCTR[LocctrCounter];
 				}
-			}
-			else
-			{
-
+			} else {
 				strcpy(opcode, ReadOprator());	// OP Code 읽기
 				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);	// 중간파일에 OP code 복사
 				SkipSpace();	// OP code와 피연산자 사이의 공백 제거
@@ -633,10 +653,14 @@ void main(void)
 						LOCCTR[LocctrCounter] = loc + StrToDec(operand);
 					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
-					else if (!strcmp(opcode, "BASE")) {
-							LOCCTR[LocctrCounter] = loc;	// BASE Assembler Directive일 경우 Loc을 대입
+					else if (!strcmp(opcode, "BASE")
+						|| !strcmp(opcode, "NOBASE")
+						|| !strcmp(opcode, "EXTDEF")
+						|| !strcmp(opcode, "EXTREF")) {
+						// 별달리 처리가 필요한 Assembler Directive가 아닐 경우 Loc을 대입
+						LOCCTR[LocctrCounter] = loc;
 					}
-					else { // 정의되지 않은 OP code일 경우 경고후 프로그램 종료
+					else { // 정의되지 않은 OP code이므로 경고후 프로그램 종료
 						fclose(fptr);
 						printf("ERROR: Invalid Operation Code\n");
 						exit(1);
@@ -740,6 +764,7 @@ void main(void)
 					// 심볼테이블에서 해당 피연산자를 찾을 수 있을 경우
 					if (inst_fmt_byte == 4) {	// extended instruction의 주소 지정
 						inst_fmt_address = SYMTAB[SymIdx].Address;
+						RecordRLD(IMRArray[loop]->OperatorField, IMRArray[loop]->Loc);	// 재배치가 필요하므로 RLD에 추가
 					}
 					else {	// relative Addressing mode
 						// PC의 값 저장
