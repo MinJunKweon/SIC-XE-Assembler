@@ -580,6 +580,9 @@ void main(void)
 	int i, regCharIdx;
 	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
 
+	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
+	int base_register = 0;
+
 	for (loop = 1; loop<ArrayIndex; loop++) {	// 중간파일을 순차적으로 읽음
 		// 각 변수들 초기화
 		inst_fmt_opcode = 0;
@@ -635,7 +638,21 @@ void main(void)
 						inst_fmt_address = SYMTAB[SymIdx].Address;
 					}
 					else {	// relative Addressing mode
-						
+						// PC의 값 저장
+						// 명령어 실행 시점에서 PC의 값 계산 (다음 명령어의 메모리 위치)
+						diff = SYMTAB[SymIdx].Address - IMRArray[loop]->Loc + inst_fmt_byte;
+						if (diff < 0 || diff < 2048) {
+							// pc relative일 경우
+							if (fabs(diff) > 2048) {	// 변위에 절대값을 취했을 때 값이 11비트로 표현이 불가능하면
+								// pc relative로 표현 불가능하므로 ERROR로 처리
+								fclose(fptr);
+								printf("ERROR: CANNOT present pc relative addressing mode\n");
+								exit(1);
+							}
+							// 정상적으로 표현 가능 할 경우
+							// 음수면 12비트로 표현해야하므로 12비트의 음수로 변환해주기 위한 함수 호출
+							// 음수가 아니라면 함수 로직 내에서 그대로 반환되므로 음수가 아니어도 함수는 호출
+						}
 					}
 				}
 				else {
@@ -704,7 +721,7 @@ void main(void)
 			IMRArray[loop]->ObjectCode >>= 8;
 		}
 		else if (!strcmp(opcode, "BASE")) {
-		
+			base_register = IMRArray[loop]->Loc;
 		}
 		else if (!strcmp(opcode, "EXTDEF")) {
 			
