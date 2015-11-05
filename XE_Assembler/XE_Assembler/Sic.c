@@ -8,23 +8,30 @@
 #define SHARP 2
 #define AT 3
 
+// 각각의 상수들을 명확하게 의미하기 위해서 define
+#define BUFFER_SIZE 256	// 버퍼의 크기
+#define LABEL_LENGTH 32	// 소스코드상 라벨들의 최대 길이
+#define SYMTAB_SIZE 20	// 심볼테이블의 레코드 최대 개수
+#define IMR_SIZE 100	// 중간파일의 레코드 최대 개수
+#define RLD_SIZE 20		// Relocation DIctionary의 레코드 최대 개수
+
 #define TEST_FNAME "x:\\2.asm"
 
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable {	// OP 테이블의 각각의 레코드 구조체
-	char Mnemonic[8];	// 명령어의 형상 (ex. LDB, LDA, etc...)
+	char Mnemonic[LABEL_LENGTH];	// 명령어의 형상 (ex. LDB, LDA, etc...)
 	char Format;	// 명령어의 형식 (명령어의 길이)	3/4 형식은 편의상 3형식으로 표현하도록 설계했습니다.
 	unsigned short int  ManchineCode;	// 해당 명령어의 목적 코드
 }SIC_OPTAB;
 
 typedef struct SymbolTable { // 심볼테이블의 각각의 레코드 구조체
-	char Label[10];	// 레이블의 이름
+	char Label[LABEL_LENGTH];	// 레이블의 이름
 	int Address;	// 레이블이 가리키는 주소
 }SIC_SYMTAB;
 
 // 레지스터 테이블을 구성하는 레지스터 레코드
 typedef struct RegisterTable {
-	char name[3];	// 레지스터 Mnemonic
+	char name[LABEL_LENGTH];	// 레지스터 Mnemonic
 	int id;	// 레지스터의 고유번호
 } SIC_XE_REGISTER;
 
@@ -38,16 +45,16 @@ typedef struct IntermediateRecord {	// 중간파일 구조
 	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
 	unsigned short int Loc;	//  해당 명령어의 메모리상 위치
 	unsigned long int ObjectCode;	//  Pass 2를 거쳐 Assemble된 목적코드
-	char LabelField[32];	// 소스코드상 표기되어있는 레이블
-	char OperatorField[32];	// 소스코드상 표기되어있는 Mnemonic
-	char OperandField[32];	// 소스코드상 표기되어있는 피연산자
+	char LabelField[LABEL_LENGTH];	// 소스코드상 표기되어있는 레이블
+	char OperatorField[LABEL_LENGTH];	// 소스코드상 표기되어있는 Mnemonic
+	char OperandField[LABEL_LENGTH];	// 소스코드상 표기되어있는 피연산자
 }IntermediateRec;
 
 // 함수의 결과를 전달하기 위해 임시로 사용하는 전역변수들
 int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
 int RegIdx;		// 레지스터의 위치를 가리킴. Counter 변수와 역할 비슷
 int SymIdx;		// Label의 위치를 가리킴. Counter 변수와 역할 비슷
-int LOCCTR[100];	// 각 명령어들의 메모리를 세기위한 Location Counter
+int LOCCTR[IMR_SIZE];	// 각 명령어들의 메모리를 세기위한 Location Counter. 중간파일의 개수와 동일하다
 int LocctrCounter = 0;	// LOCCTR의 Index 변수
 int Flag;
 int Index;
@@ -64,14 +71,15 @@ unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블�
 unsigned short int FoundOnRegTab_flag = 0;	// 레지스터 테이블에 해당 레지스터의 형상이 있는지 확인
 
 // 이 변수들은 모두 소스코드상의 표기법을 가짐
-char Buffer[256];	// 각 소스코드를 읽기위한 버퍼 변수
-char Label[32];	// 레이블을 임시로 저장하기 위한 변수
-char Mnemonic[32];	// Mnemnic을 임시로 저장하기 위한 변수
-char Operand[32];	// 피연산자를 임시로 저장하기 위한 변수
+char Buffer[BUFFER_SIZE];	// 각 소스코드를 읽기위한 버퍼 변수
+char Label[LABEL_LENGTH];	// 레이블을 임시로 저장하기 위한 변수
+char Mnemonic[LABEL_LENGTH];	// Mnemnic을 임시로 저장하기 위한 변수
+char Operand[LABEL_LENGTH];	// 피연산자를 임시로 저장하기 위한 변수
 
-SIC_SYMTAB SYMTAB[20];	// 심볼테이블 변수
-IntermediateRec* IMRArray[100];	// 중간파일 변수
-RLD RLDArray[20];	// 재배치가 필요한 부분을 저장하기 위한 변수
+// 각각 프로그램당 1개씩 필요하므로 2차원 배열로 생성
+SIC_SYMTAB SYMTAB[SYMTAB_SIZE];	// 심볼테이블 변수
+IntermediateRec* IMRArray[IMR_SIZE];	// 중간파일 변수
+RLD RLDArray[RLD_SIZE];	// 재배치가 필요한 부분을 저장하기 위한 변수
 
 static SIC_XE_REGISTER REG_TAB[] =
 {
