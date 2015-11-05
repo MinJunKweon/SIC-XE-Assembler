@@ -45,7 +45,7 @@ typedef struct RelocationDictionary {
 typedef struct IntermediateRecord {	// 중간파일 구조
 	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
 	unsigned short int Loc;	//  해당 명령어의 메모리상 위치
-	unsigned long int ObjectCode;	//  Pass 2를 거쳐 Assemble된 목적코드
+	unsigned long long int ObjectCode;	//  Pass 2를 거쳐 Assemble된 목적코드
 	char LabelField[LABEL_LENGTH];	// 소스코드상 표기되어있는 레이블
 	char OperatorField[LABEL_LENGTH];	// 소스코드상 표기되어있는 Mnemonic
 	char OperandField[LABEL_LENGTH];	// 소스코드상 표기되어있는 피연산자
@@ -371,44 +371,59 @@ double StrToFloat(char* c) {
 	return float_num;
 }
 
-unsigned long ConvertFloatNum(char * operand) {
+unsigned long long ConvertFloatNum(char * operand) {
 	// Floating Number로 바꾸기 위한 함수
-	int s = 0;	// 음수, 양수를 표현하기위한 변수 (음수 : 1, 양수 : 0)
-	int dec_size = 0, b = 0;
-	int i = 0, j = 0, e = 0x400;
-	long dec = 0, f = 0;
-	double frac = 0;
-	char temp[1000];
+	int dec_size = 0, b = 0, k = 0;
+	// dec_size : 정수부가 차지하는 비트수
+	// b : 소수부가 차지하는 비트수
+	// k : 만약 정수부가 0이라면 소수부 시작지점까지의 지수 
+	int i = 0, j = 0;	// 인덱스 변수
+	unsigned long long int s = 0, dec = 0, f = 0, e = 0x400;
+	// 48비트는 unsigned long long int로 표현할 수 있기 때문에 변경
+	// s : 음수, 양수를 표현하기 위한 변수 (음수 : 1, 양수 : 0)
+	// dec : 정수부를 표현하는 부분
+	// f : 소수부를 표현하는 부분
+	// e : 지수부를 표현하는 부분
+	double frac = 0;	// 연산을 위해 fraction을 표현하는 부분
+	char temp[1000];	// 정수부, 소수부를 잘라내기 위한 임시 변수
 
 	if (ReadFlag(operand)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
 		operand += 1;
 	}
-	if (operand[0] == '-') {
+	if (operand[0] == '-') {	// 음수일 때 분기처리
 		s = 1;	// 음수임을 표현
 		operand += 1;	// '-' 제거
 	}
 
 	// 지수를 계산하기 위한 자리수 재기와 정수부, 소수부 나눠서 int형에 저장
 	do {
-		if (operand[i] == '.') {
+		if (operand[i] == '.') {	// 정수부 잘라서 저장
 			temp[j] = '\0';
-			dec = StrToDec(temp);
+			dec = StrToDec(temp);	// 정수부 계산
 			if (dec > 0) {	// 0일 경우 분기처리 (무한대)
 				dec_size = log2(dec) + 1;
 			}
 			j = 0;
 		}
 		else if (operand[i] == '\0') {
+			// 소수부 계산
 			temp[j] = '\0';
-			frac = StrToFloat(temp);
-			while (frac != 1.0 && 36 - dec_size > b) {
-				frac *= 2;
-				f <<= 1;
-				b++;
-				if ((int)frac >= 1) {
-					frac -= 1;
-					f += 1;
-					printf("frac: %lf\n", frac);
+			frac = StrToFloat(temp);	// 소수부 double형으로 저장
+			while (frac == 0 || 36 - dec_size > b) {
+				// 더이상 곱할 소수부가 없을 경우나 표현가능한 비트 수가 넘어갈 경우 반복문 탈출
+				frac *= 2; // 소수를 2 곱함
+				f <<= 1;	// 표현할 소수부에 1비트의 자리를 만듦
+				if (f != 0 || dec_size != 0) {
+					// f가 어떤 비트라도 들어가 있거나 정수부의 길이가 0이 아닐때 b 증가
+					// 즉, 0.00357 같은 경우 3이 나타날 때부터 표현할 비트에 저장하기 위함
+					b++;	// 표현된 비트 수 1증가
+				}
+
+				if ((int)frac >= 1) {	// 곱한 소수가 1.xxx형태일 경우
+					frac -= 1;	// 0.xxx형태로 변경
+					f += 1;	// f의 맨 오른쪽 비트에 1증가
+				} else if (f == 0) {	// f가 여전히 0일 경우 정수부가 0일때 지수표현을 위해 k에 1증가 
+					k += 1;
 				}
 			}
 		}
@@ -417,7 +432,7 @@ unsigned long ConvertFloatNum(char * operand) {
 		}
 	} while (operand[i++] != '\0');
 
-	e += (dec_size > 0) ? (dec_size) : (-b);	// 지수 부분 표현
+	e += (dec_size > 0) ? (dec_size - 1) : (-k);	// 지수 부분 표현
 
 	if ((dec + frac) == 0) {
 		// 정수부와 소수부 모두 0일 경우 0을 반환
@@ -432,13 +447,12 @@ unsigned long ConvertFloatNum(char * operand) {
 		dec <<= (36 - dec_size);
 	}
 
-	if (b > (36 - dec_size)) {	// 정수부가 차지한 부분을 제외한 비트에 소수가 다 들어가지 않을 경우 비트 잘라내기
+	if (b >= (36 - dec_size)) {	// 정수부가 차지한 부분을 제외한 비트에 소수가 다 들어가지 않을 경우 비트 잘라내기
 		f >>= (b - (36 - dec_size));
 	}
 	else {	// 정수부가 차지한 부분을 제외한 비트에 소수가 들어가고도 남을 경우 비트 당기기
 		f <<= ((36 - dec_size) - b);
 	}
-	printf("float : %X %X %X %X %d %d\n", (s << 47), (e << 36), dec, f, dec_size, b);
 	return (s << 47) + (e << 36) + dec + f;	// 표현된 부동소수점 반환
 }
 
@@ -529,7 +543,7 @@ void CreateProgramList() {	// 리스트 파일 생성
 		} else {
 			if (isFloatNum(IMRArray[loop]->OperandField)) {
 				// 부동소수점이므로 6바이트로 표현
-				fprintf(fptr_list, "%012X\n", IMRArray[loop]->ObjectCode);
+				fprintf(fptr_list, "%012llX\n", IMRArray[loop]->ObjectCode);
 			} else {
 				// C'XX' 혹은 X'XX' 일때 예외처리
 				len = ComputeLen(IMRArray[loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
@@ -556,7 +570,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	int first_address;
 	int last_address;
 	int temp_address;
-	int temp_objectcode[30];
+	unsigned long long int temp_objectcode[30];	// 6바이트 목적코드를 담기위해
 	int first_index;
 	int last_index;
 	int x, xx;
@@ -625,14 +639,25 @@ void CreateObjectCode() {	// 목적파일 생성
 			} else {
 				if (!strcmp(IMRArray[loop + 1]->OperatorField, "WORD")
 					|| !strcmp(IMRArray[loop + 1]->OperatorField, "BYTE")) {
-					// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
-					temp_address += ComputeLen(IMRArray[loop + 1]->OperandField);
+					if (isFloatNum(IMRArray[loop + 1]->OperandField)) {
+						// 부동소수점일 경우 6바이트 추가
+						temp_address += 6;
+					} else {
+						// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
+						temp_address += ComputeLen(IMRArray[loop + 1]->OperandField);
+					}
 				}
 			}
 		}
 
 		// 텍스트 레코드로 한줄의 시작주소와 목적코드의 길이 계산해서 출력
 		// 콘솔창과 파일에 모두 출력
+		if ((IMRArray[last_index]->Loc - IMRArray[first_index]->Loc) == 0) {
+			if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
+				break;
+			else
+				continue;
+		}
 		printf("T%06X%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
 		fprintf(fptr_obj, "T^%06X^%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
 
@@ -646,8 +671,8 @@ void CreateObjectCode() {	// 목적파일 생성
 					fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
 				} else if (isFloatNum(temp_operand[xx])) {
 					// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
-					printf("%012X", temp_objectcode[xx]);
-					fprintf(fptr_obj, "^%012X", temp_objectcode[xx]);
+					printf("%012llX", temp_objectcode[xx]);
+					fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
 				}
 			}
 			else {
@@ -679,8 +704,8 @@ void CreateObjectCode() {	// 목적파일 생성
 				} else {
 					if (isFloatNum(temp_operand[xx])) {
 						// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
-						printf("%012X", temp_objectcode[xx]);
-						fprintf(fptr_obj, "^%012X", temp_objectcode[xx]);
+						printf("%012llX", temp_objectcode[xx]);
+						fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
 					} else {
 						// 명령어가 아닐 경우 기본 3바이트 형식에 맞춰 출력
 						printf("%06X", temp_objectcode[xx]);
@@ -783,7 +808,6 @@ void main(void)
 			j = 0;
 
 			IMRArray[ArrayIndex] = (IntermediateRec*)malloc(sizeof(IntermediateRec));/* [A] */	// 중간파일 동적할당
-
 			IMRArray[ArrayIndex]->LineIndex = ArrayIndex;	// 소스코드 상의 행 삽입
 			strcpy(label, ReadLabel());	// 레이블을 읽어 Label에 저장
 			strcpy(IMRArray[ArrayIndex]->LabelField, label);	// 레이블을 중간파일에 저장
