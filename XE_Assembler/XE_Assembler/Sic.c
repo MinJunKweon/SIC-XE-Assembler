@@ -38,6 +38,7 @@ typedef struct IntermediateRecord {	// 중간파일
 // 함수의 결과를 전달하기 위해 임시로 사용하는 전역변수들
 int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
 int RegIdx;		// 레지스터의 위치를 가리킴. Counter 변수와 역할 비슷
+int SymIdx;		// Label의 위치를 가리킴. Counter 변수와 역할 비슷
 int LOCCTR[100];	// 각 명령어들의 메모리를 세기위한 Location Counter
 int LocctrCounter = 0;	// LOCCTR의 Index 변수
 int Flag;
@@ -146,6 +147,7 @@ void SkipSpace() {	// 공백 스킵하기 (Index를 뒤로 옮김)
 }
 
 int ReadFlag(char *Mnemonic) {	// Mnemonic에서 플래그 비트 읽기
+	Flag = 0;
 	switch (Mnemonic[0]) {
 	case '+':
 		Flag = 1;
@@ -189,14 +191,15 @@ void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입�
 
 int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
-	if (ReadFlag(Mnemonic)) { // Extended Instruction일 경우 예외처리
+	if (ReadFlag(label)) { // Immediate Addressing Mode이거나 Indirect Addressing Mode일 경우 예외처리
 		label = label + 1;
 	}
+
 	for (int k = 0; k <= SymtabCounter; k++) {
 		if (!strcmp(SYMTAB[k].Label, label)) {
 			FoundOnSymtab_flag = 1;
+			SymIdx = k;
 			return (FoundOnSymtab_flag);
-			break;
 		}
 	}
 	return (FoundOnSymtab_flag);	// 없으면 0 반환
@@ -229,6 +232,18 @@ int SearchRegTab(char * Mnemonic) {
 		}
 	}
 	return (FoundOnRegTab_flag);
+}
+
+int isNum(char * str) {
+	int i, len = strlen(str);
+	char c;
+	for (i = 0; i < len; ++i) {
+		c = str[i];
+		if ('0' > c && '9' < c) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
@@ -540,20 +555,33 @@ void main(void)
 	// END 지시자를 만났을 경우 END 지시자 바로 이전 소스코드의 메모리 위치와 시작주소를 빼서 총 프로그램 길이 계산
 
 	/********************************** PASS 2 ***********************************/
+	for (int dd = 0; dd < SymtabCounter; dd++) {
+		printf("%7s:%8x\n", SYMTAB[dd].Label, SYMTAB[dd].Address);
+	}
+
 	printf("Pass 2 Processing...\n");
 
 	unsigned long inst_fmt;		// 최종 목적 코드
 	unsigned long inst_fmt_opcode;	// 목적코드의 op code 부분을 나타내는 변수
+	unsigned long inst_fmt_sign;	// Immediate, Indirect Addressing Mode를 나타내는 플래그비트 변수 
+	unsigned long inst_fmt_relative;	// relative addressing mode를 나타내는 플래그비트 변수
 	unsigned long inst_fmt_index;	// index Addressing Mode를 나타내는 변수
+	unsigned long inst_fmt_extended;	// 플래그비트 e를 나타내는 플래그비트 변수
 	unsigned long inst_fmt_address;	// 피연산자 부분을 나타내는 변수 (필요에 의해서 직접적인 상수가 들어갈 수도 있다. ex. Immediate Addressing Mode)
 	int inst_fmt_byte;		// 몇형식 명령어인지 나타내는 변수 (바이트 수)
+	int i, regCharIdx;
+	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
 
 	for (loop = 1; loop<ArrayIndex; loop++) {	// 중간파일을 순차적으로 읽음
 		// 각 변수들 초기화
 		inst_fmt_opcode = 0;
+		inst_fmt_sign = 0;
+		inst_fmt_relative = 0;
 		inst_fmt_index = 0;
+		inst_fmt_extended = 0;
 		inst_fmt_address = 0;
 		inst_fmt_byte = 0;
+		regName[0] = '\0';
 
 		strcpy(opcode, IMRArray[loop]->OperatorField);	// op code 부분 복사
 
@@ -561,25 +589,75 @@ void main(void)
 			inst_fmt_opcode = OPTAB[Counter].ManchineCode;	// opcode의 목적코드 복사
 			inst_fmt_byte = OPTAB[Counter].Format - '0';	// 해당 명령어가 몇 바이트를 사용하는 지 저장
 			if (inst_fmt_byte == 3 && ReadFlag(opcode)) {	// 만약 4형식 명령어일 경우 분기처리
-				inst_fmt_byte = 4;
+				inst_fmt_byte = 4;	// 4형식 명령어
+				inst_fmt_extended = 0x00100000;	// 플래그 비트 e가 1임.
 			}
+			inst_fmt_opcode <<= (8 * (inst_fmt_byte - 1));	// 각 명령어 형식에 맞게 왼쪽으로 Shift
 			IMRArray[loop]->ObjectCode = inst_fmt_opcode;
 			strcpy(operand, IMRArray[loop]->OperandField);
-
-			if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {
-				inst_fmt_index = 0x008000;
-				operand[strlen(operand) - 2] = '\0';
+			
+			if (ReadFlag(operand)) {
+				if (inst_fmt_byte <= 2) {
+					fclose(fptr);
+					printf("ERROR: Invalid Addressing Mode\n");
+					exit(1);
+				}
+				if (Flag == 2) {	// Immediate Addressing Mode
+					inst_fmt_sign = 0x010000;
+				}
+				else if (Flag == 3) {	// Indirect Addressing Mode
+					inst_fmt_sign = 0x020000;
+				}
+				inst_fmt_sign <<= 3 - inst_fmt_byte;	// 바이트 수 만큼 왼쪽으로 Shift
 			}
-			else
-				inst_fmt_index = 0x000000;
+			else if (inst_fmt_byte >= 3) {	// 3/4형식 명령어 Simple Addressing Mode
+				inst_fmt_sign = 0x030000;
+				inst_fmt_sign <<= 3 - inst_fmt_byte;	// 바이트 수 만큼 왼쪽으로 Shift
+			}
+			
+			if (inst_fmt_byte >= 3) {
+				if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {	// index addressing Mode
+					inst_fmt_index = 0x008000;	// index addressing mode 플래그 비트 x에 1
+					inst_fmt_index <<= 3 - inst_fmt_byte;
+					operand[strlen(operand) - 2] = '\0';
+				}
+				
+				if (SearchSymtab(operand)) {
+					if (SYMTAB[SymIdx].Address - IMRArray[ArrayIndex]->Loc) {
 
-
-			for (int search_symtab = 0; search_symtab<SymtabCounter; search_symtab++) {
-				if (!strcmp(operand, SYMTAB[search_symtab].Label))
-					inst_fmt_address = (long)SYMTAB[search_symtab].Address;
+					}
+				}
+				else {
+					fclose(fptr);
+					printf("ERROR: Label isn't exist [%s]\n", operand);
+					exit(1);
+				}
+			}
+			else if (inst_fmt_byte == 2) {	// 2형식 명령어일 경우
+				i = 0; regCharIdx = 0;	// 인덱스 변수들 초기화
+				do {	// 피연산자를 읽어 레지스터들에 맞는 목적코드 작성
+					if (operand[i] == ',' || operand[i] == '\0') {	// 앞서 나온 레지스터를 읽을 준비가 되었을 경우
+						regName[regCharIdx] = '\0';	// 단순 문자배열을 문자열로 끊고
+						if (SearchRegTab(regName)) {	// 미리 정의된 레지스터 테이블에서 읽음
+							if (inst_fmt_address != 0) {	// 기존에 기록된 레지스터의 아이디가 존재할경우 4비트를 왼쪽으로 밀고 기록
+								inst_fmt_address <<= 4;
+							}
+							inst_fmt_address += REG_TAB[RegIdx].id;	// 레지스터 테이블에 해당 레지스터가 있을 경우 그 아이디를 목적코드에 추가
+						}
+						else {	// RegTab에 없기 때문에 오류로 처리하고 프로그램 종료 
+							fclose(fptr);
+							printf("ERROR: Invalid Register\n");
+							exit(1);
+						}
+						regCharIdx = 0;	// 인덱스 변수 초기화
+					}
+					else if (operand[i] != ' ') {	// 공백일 경우 스킵하도록
+						regName[regCharIdx++] = operand[i];	// 레지스터 이름 저장
+					}
+				} while (operand[i++] != '\0');
 			}
 
-			inst_fmt = inst_fmt_opcode + inst_fmt_index + inst_fmt_address;
+			inst_fmt = inst_fmt_opcode + inst_fmt_sign + inst_fmt_index + inst_fmt_relative + inst_fmt_extended + inst_fmt_address;
 			IMRArray[loop]->ObjectCode = inst_fmt;
 		}
 		else if (!strcmp(opcode, "WORD")) {
@@ -609,8 +687,12 @@ void main(void)
 
 			IMRArray[loop]->ObjectCode >>= 8;
 		}
-		else
-			/* do nothing */;
+		else if (!strcmp(opcode, "EXTDEF")) {
+			
+		}
+		else if (!strcmp(opcode, "EXTREF")) {
+
+		}
 	}
 
 	// 리스트 파일과 목적 파일 생성
