@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>	
 #include <string.h>	// 문자열 관리를 위함
+#include <math.h>	// log 함수를 사용하기 위함 (자리수 구하기)
 #include <malloc.h>	// 동적할당을 위함
 
 // 명령어, 피연산자 앞에 붙어있는 기호들을 알아보기 쉽도록 define
@@ -268,19 +269,98 @@ int isNum(char * str) {	// 문자열을 이루고 있는 모든 원소들이 숫자로 이루어져있�
 	int i, len = strlen(str);
 	for (i = 0; i < len; ++i) {	// 문자열 길이만큼 반복해서 모두 숫자인지 판단
 		if ('0' > str[i] || '9' < str[i]) {	// 숫자가 아닐 경우 0을 반환
+			if (str[i] == '-') continue;	// 음수를 나타내는 '-'가 나왔을 경우는 생략
 			return 0;
 		}
 	}
 	return 1;	// 모두 숫자이므로 1을 반환
 }
 
-unsigned long ConvertDiffForAddress(short diff) {
+int isFloatNum(char * str) {	// Floating Number인지 확인하기 위한 함수
+	if (ReadFlag(str)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
+		str += 1;
+	}
+	int i, len = strlen(str);
+	for (i = 0; i < len; ++i) {	// 문자열 길이만큼 반복해서 모두 숫자인지 판단
+		if ('0' > str[i] || '9' < str[i]) {	// 숫자가 아닐 경우 0을 반환
+			if (str[i] == '.' || str[i] == '-') continue;	// 소수점임을 나타내는 '.'과 음수를 나타내는 '-'가 나왔을 경우는 생략
+			return 0;
+		}
+	}
+	return 1;	// 모두 숫자이므로 1을 반환
+}
+
+unsigned long ConvertNumber(int diff, int nibble) {
+	// 비트에 맞춰 음수를 계산하기 위한 함수 (12 bit이므로 음수 계산을 한다.)
 	if (diff >= 0) { // 양수이므로 그대로 반환
 		return diff;
 	}
 	// 음수일경우 자료형의 크기가 12비트라고 가정하고 2's completion을 진행
-	diff ^= 0xF000;	// 12비트 이후의 bit를 제거하기 위해서 총 16비트의 short형의 뒤 4비트를 0으로 만든다
+	// 표현하는 nibble에 따라 뒤에 잘라내는 비트 수를 다르게한다.
+	if (nibble == 5) {
+		diff ^= 0xFFF00000;	// 20비트 이후의 bit를 제거하기 위해서 총 32비트의 int형의 뒤 12비트를 0으로 만든다
+	} else {
+		diff ^= 0xFFFFF000;	// 12비트 이후의 bit를 제거하기 위해서 총 32비트의 int형의 뒤 20비트를 0으로 만든다
+	}
 	return diff;
+}
+
+unsigned long ConvertFloatNum(char * operand) {
+	// Floating Number로 바꾸기 위한 함수
+	int s = 0;	// 음수, 양수를 표현하기위한 변수 (음수 : 1, 양수 : 0)
+	int dec, frac, dec_size = 0, frac_size = 0;
+	int i = 0, j = 0, e = 0x400;
+	char temp[1000];
+	
+	if (ReadFlag(operand)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
+		operand += 1;
+	}
+	if (operand[0] == '-') {
+		s = 1;	// 음수임을 표현
+		operand += 1;	// '-' 제거
+	}
+
+	// 지수를 계산하기 위한 자리수 재기와 정수부, 소수부 나눠서 int형에 저장
+	do {
+		if (operand[i] == '.') {
+			temp[j] = '\0';
+			dec = StrToDec(temp);
+			if (dec > 0) {	// 0일 경우 분기처리 (무한대)
+				dec_size = log2(dec) + 1;
+			}
+			j = 0;
+		} else if (operand[i] == '\0') {
+			temp[j] = '\0';
+			frac = StrToDec(temp);
+			if (frac > 0) {	// 0일 경우 분기처리 (무한대)
+				frac_size = log2(frac) + 1;
+			}
+			j = 0;
+		} else {
+			temp[j++] = operand[i];
+		}
+	} while (operand[i++] != '\0');
+	
+	if ((dec + frac) == 0) {
+		// 정수부와 소수부 모두 0일 경우 0을 반환
+		return 0;
+	}
+	
+	e += (dec_size > 0) ? (dec_size) : (-frac_size) ;	// 지수 부분 표현
+	
+	if (dec_size > 36) {	// 정수부가 36비트가 넘어갈 경우 넘는 비트 잘라내기
+		dec >>= dec_size - 36;
+		dec_size = 36;
+	} else {	// 정수부가 36비트가 안될 경우 소수부의 맨앞으로 당기기
+		dec <<= 36 - dec_size;
+	}
+
+	if (frac_size > (36 - dec_size)) {	// 정수부가 차지한 부분을 제외한 비트에 소수가 다 들어가지 않을 경우 비트 잘라내기
+		frac >>= frac_size - (36 - dec_size);
+	} else {	// 정수부가 차지한 부분을 제외한 비트에 소수가 들어가고도 남을 경우 비트 당기기
+		frac <<= (36 - dec_size) - frac_size;
+	}
+	return (s << 47) + (e << 36) + dec + frac;	// 표현된 부동소수점 반환
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
@@ -294,10 +374,13 @@ int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
 	int len = strlen(c);
 	for (int k = len - 1, l = 1; k >= 0; k--)	// 각 문자열을 거꾸로 읽어서 dec_num에 계산
 	{
+		if (temp[0] == '-') { // 음수를 나타내는 '-'를 생략하기 위함
+			continue;
+		}
 		dec_num = dec_num + (int)(temp[k] - '0')*l;
 		l = l * 10;	// 자리수를 계산하기위해 앞으로 나올 숫자들이 몇번째 자리인지 나타냄
 	}
-	return (dec_num);
+	return (temp[0] == '-') ? (-dec_num) : (dec_num);	// 음수일 경우 음수를 반환
 }
 
 int StrToHex(char* c)	// 16진수를 표현하는 String을 정수형으로 변환해서 반환
@@ -820,7 +903,7 @@ void main(void)
 							// 음수면 12비트로 표현해야하므로 12비트의 음수로 변환해주기 위한 함수 호출
 							// 음수가 아니라면 함수 로직 내에서 그대로 반환되므로 음수가 아니어도 함수는 호출
 							inst_fmt_address = 0x002000;
-							inst_fmt_address += ConvertDiffForAddress(diff);
+							inst_fmt_address += ConvertNumber(diff, 3);
 						}
 						else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
 							// base relative addressing mode에 기반하여 변위 다시 계산
@@ -843,7 +926,7 @@ void main(void)
 					// 심볼테이블에서 피연산자를 찾을 수 없을 때
 					ReadFlag(operand);	// 피연산자에 붙어있는 플래그가 #인지 검사하기위함 
 					if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
-						inst_fmt_address = StrToDec(operand);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
+						inst_fmt_address = ConvertNumber(StrToDec(operand), 5);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
 					}
 					else {
 						// 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
