@@ -111,7 +111,7 @@ static SIC_OPTAB OPTAB[] =
 	{ "JEQ",  '3',  0x30 },
 	{ "JGT",  '3',  0x34 },
 	{ "JLT",  '3',  0x38 },
-	{ "JSUB",  '3',  0x48 },
+	{ "JSUB",  '3',  0x4B },
 	{ "LDA",  '3',  0x00 },
 	{ "LDCH",  '3',  0x50 },
 	{ "LDL",  '3',  0x08 },
@@ -235,11 +235,12 @@ int SearchRegTab(char * Mnemonic) {
 }
 
 int isNum(char * str) {
+	if (ReadFlag(str)) {
+		str += 1;
+	}
 	int i, len = strlen(str);
-	char c;
 	for (i = 0; i < len; ++i) {
-		c = str[i];
-		if ('0' > c && '9' < c) {
+		if ('0' > str[i] || '9' < str[i]) {
 			return 0;
 		}
 	}
@@ -247,6 +248,9 @@ int isNum(char * str) {
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
+	if (ReadFlag(c)) {
+		c += 1;
+	}
 	int dec_num = 0;
 	char temp[10];
 	strcpy(temp, c);
@@ -530,7 +534,10 @@ void main(void)
 					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
 						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
 					else {	// 정의되지 않은 OP code일 경우 경고후 프로그램 종료
-						if (strcmp(opcode, "BASE")) {
+						if (!strcmp(opcode, "BASE")) {
+							LOCCTR[LocctrCounter] = loc;	// BASE Assembler Directive일 경우 Loc을 대입
+						}
+						else {
 							fclose(fptr);
 							printf("ERROR: Invalid Operation Code\n");
 							exit(1);
@@ -621,16 +628,24 @@ void main(void)
 					inst_fmt_index <<= 3 - inst_fmt_byte;
 					operand[strlen(operand) - 2] = '\0';
 				}
-				
-				if (SearchSymtab(operand)) {
-					if (SYMTAB[SymIdx].Address - IMRArray[ArrayIndex]->Loc) {
 
+				if (SearchSymtab(operand)) {
+					if (inst_fmt_byte == 4) {	// extended instruction의 주소 지정
+						inst_fmt_address = SYMTAB[SymIdx].Address;
+					}
+					else {	// relative Addressing mode
+						
 					}
 				}
 				else {
-					fclose(fptr);
-					printf("ERROR: Label isn't exist [%s]\n", operand);
-					exit(1);
+					if (isNum(operand)) {
+						inst_fmt_address = StrToDec(operand);
+					}
+					else {
+						fclose(fptr);
+						printf("ERROR: Label isn't exist [%s]\n", operand);
+						exit(1);
+					}
 				}
 			}
 			else if (inst_fmt_byte == 2) {	// 2형식 명령어일 경우
@@ -686,6 +701,9 @@ void main(void)
 			}
 
 			IMRArray[loop]->ObjectCode >>= 8;
+		}
+		else if (!strcmp(opcode, "BASE")) {
+		
 		}
 		else if (!strcmp(opcode, "EXTDEF")) {
 			
