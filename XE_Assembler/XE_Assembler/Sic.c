@@ -98,6 +98,17 @@ static SIC_XE_REGISTER REG_TAB[] =
 // OP 테이블
 static SIC_OPTAB OPTAB[] =
 {
+	/*********Instruction Set II***********/
+	{ "ADDF", '3', 0x58 },
+	{ "COMPF", '3', 0x88 },
+	{ "DIVF", '3', 0x64 },
+	{ "FIX", '1', 0xC4 },
+	{ "FLOAT", '1', 0xC0 },
+	{ "LDF", '3', 0x70 },
+	{ "MULF", '3', 0x60 },
+	{ "NORM", '1', 0xC8 },
+	{ "STF", '3', 0x80 },
+	{ "SUBF", '3', 0x5C },
 	/*********Instruction Set I***********/
 	{ "ADDR", '2', 0x90 },
 	{ "CLEAR", '2', 0xB4 },
@@ -280,14 +291,18 @@ int isFloatNum(char * str) {	// Floating Number인지 확인하기 위한 함수
 	if (ReadFlag(str)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
 		str += 1;
 	}
-	int i, len = strlen(str);
+	int i, len = strlen(str), f = 0;	// 소수점이 나오지 않을 경우 Float Num이 아니기 때문에 분기처리하기 위한 변수 f
 	for (i = 0; i < len; ++i) {	// 문자열 길이만큼 반복해서 모두 숫자인지 판단
 		if ('0' > str[i] || '9' < str[i]) {	// 숫자가 아닐 경우 0을 반환
-			if (str[i] == '.' || str[i] == '-') continue;	// 소수점임을 나타내는 '.'과 음수를 나타내는 '-'가 나왔을 경우는 생략
+			if (str[i] == '.' && f == 0) {
+				f = 1;
+				continue;
+			}
+			if (str[i] == '-') continue;	// 소수점임을 나타내는 '.'과 음수를 나타내는 '-'가 나왔을 경우는 생략
 			return 0;
 		}
 	}
-	return 1;	// 모두 숫자이므로 1을 반환
+	return (f != 0) ? 1 : 0;	// 모두 숫자이므로 1을 반환
 }
 
 unsigned long ConvertNumber(int diff, int nibble) {
@@ -303,64 +318,6 @@ unsigned long ConvertNumber(int diff, int nibble) {
 		diff ^= 0xFFFFF000;	// 12비트 이후의 bit를 제거하기 위해서 총 32비트의 int형의 뒤 20비트를 0으로 만든다
 	}
 	return diff;
-}
-
-unsigned long ConvertFloatNum(char * operand) {
-	// Floating Number로 바꾸기 위한 함수
-	int s = 0;	// 음수, 양수를 표현하기위한 변수 (음수 : 1, 양수 : 0)
-	int dec, frac, dec_size = 0, frac_size = 0;
-	int i = 0, j = 0, e = 0x400;
-	char temp[1000];
-	
-	if (ReadFlag(operand)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
-		operand += 1;
-	}
-	if (operand[0] == '-') {
-		s = 1;	// 음수임을 표현
-		operand += 1;	// '-' 제거
-	}
-
-	// 지수를 계산하기 위한 자리수 재기와 정수부, 소수부 나눠서 int형에 저장
-	do {
-		if (operand[i] == '.') {
-			temp[j] = '\0';
-			dec = StrToDec(temp);
-			if (dec > 0) {	// 0일 경우 분기처리 (무한대)
-				dec_size = log2(dec) + 1;
-			}
-			j = 0;
-		} else if (operand[i] == '\0') {
-			temp[j] = '\0';
-			frac = StrToDec(temp);
-			if (frac > 0) {	// 0일 경우 분기처리 (무한대)
-				frac_size = log2(frac) + 1;
-			}
-			j = 0;
-		} else {
-			temp[j++] = operand[i];
-		}
-	} while (operand[i++] != '\0');
-	
-	if ((dec + frac) == 0) {
-		// 정수부와 소수부 모두 0일 경우 0을 반환
-		return 0;
-	}
-	
-	e += (dec_size > 0) ? (dec_size) : (-frac_size) ;	// 지수 부분 표현
-	
-	if (dec_size > 36) {	// 정수부가 36비트가 넘어갈 경우 넘는 비트 잘라내기
-		dec >>= dec_size - 36;
-		dec_size = 36;
-	} else {	// 정수부가 36비트가 안될 경우 소수부의 맨앞으로 당기기
-		dec <<= 36 - dec_size;
-	}
-
-	if (frac_size > (36 - dec_size)) {	// 정수부가 차지한 부분을 제외한 비트에 소수가 다 들어가지 않을 경우 비트 잘라내기
-		frac >>= frac_size - (36 - dec_size);
-	} else {	// 정수부가 차지한 부분을 제외한 비트에 소수가 들어가고도 남을 경우 비트 당기기
-		frac <<= (36 - dec_size) - frac_size;
-	}
-	return (s << 47) + (e << 36) + dec + frac;	// 표현된 부동소수점 반환
 }
 
 int StrToDec(char* c) {	// 10진수를 표현하는 String을 정수형으로 변환해서 반환
@@ -402,6 +359,87 @@ int StrToHex(char* c)	// 16진수를 표현하는 String을 정수형으로 변환해서 반환
 		l = l * 16; // 자리수를 계산하기위해 앞으로 나올 숫자들이 몇번째 자리인지 나타냄
 	}
 	return (hex_num);
+}
+
+double StrToFloat(char* c) {
+	double float_num = 0;
+	int len = strlen(c);
+	for (int i = len - 1; i >= 0; i--) {
+		float_num /= 10.0;
+		float_num += (c[i] - '0')/10.0;
+	}
+	return float_num;
+}
+
+unsigned long ConvertFloatNum(char * operand) {
+	// Floating Number로 바꾸기 위한 함수
+	int s = 0;	// 음수, 양수를 표현하기위한 변수 (음수 : 1, 양수 : 0)
+	int dec_size = 0, b = 0;
+	int i = 0, j = 0, e = 0x400;
+	long dec = 0, f = 0;
+	double frac = 0;
+	char temp[1000];
+
+	if (ReadFlag(operand)) {	// 문자열 맨 앞에 플래그비트가 있을 경우 이를 생략하기 위함.
+		operand += 1;
+	}
+	if (operand[0] == '-') {
+		s = 1;	// 음수임을 표현
+		operand += 1;	// '-' 제거
+	}
+
+	// 지수를 계산하기 위한 자리수 재기와 정수부, 소수부 나눠서 int형에 저장
+	do {
+		if (operand[i] == '.') {
+			temp[j] = '\0';
+			dec = StrToDec(temp);
+			if (dec > 0) {	// 0일 경우 분기처리 (무한대)
+				dec_size = log2(dec) + 1;
+			}
+			j = 0;
+		}
+		else if (operand[i] == '\0') {
+			temp[j] = '\0';
+			frac = StrToFloat(temp);
+			while (frac != 1.0 && 36 - dec_size > b) {
+				frac *= 2;
+				f <<= 1;
+				b++;
+				if ((int)frac >= 1) {
+					frac -= 1;
+					f += 1;
+					printf("frac: %lf\n", frac);
+				}
+			}
+		}
+		else {
+			temp[j++] = operand[i];
+		}
+	} while (operand[i++] != '\0');
+
+	e += (dec_size > 0) ? (dec_size) : (-b);	// 지수 부분 표현
+
+	if ((dec + frac) == 0) {
+		// 정수부와 소수부 모두 0일 경우 0을 반환
+		return 0;
+	}
+
+	if (dec_size > 36) {	// 정수부가 36비트가 넘어갈 경우 넘는 비트 잘라내기
+		dec >>= (dec_size - 36);
+		dec_size = 36;
+	}
+	else {	// 정수부가 36비트가 안될 경우 소수부의 맨앞으로 당기기
+		dec <<= (36 - dec_size);
+	}
+
+	if (b > (36 - dec_size)) {	// 정수부가 차지한 부분을 제외한 비트에 소수가 다 들어가지 않을 경우 비트 잘라내기
+		f >>= (b - (36 - dec_size));
+	}
+	else {	// 정수부가 차지한 부분을 제외한 비트에 소수가 들어가고도 남을 경우 비트 당기기
+		f <<= ((36 - dec_size) - b);
+	}
+	printf("float : %X %X %X %X %d %d\n", (s << 47), (e << 36), dec, f, dec_size, b);
+	return (s << 47) + (e << 36) + dec + f;	// 표현된 부동소수점 반환
 }
 
 int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
@@ -489,16 +527,24 @@ void CreateProgramList() {	// 리스트 파일 생성
 				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
 			}
 		} else {
-			// C'XX' 혹은 X'XX' 일때 예외처리
-			len = ComputeLen(IMRArray[loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
-			if (len == 1) {	// 1바이트의 경우
-				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
-			} else if (len == 2) {	// 2바이트의 경우
-				fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
-			} else if (len == 3) {	// 3바이트의 경우
-				fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
+			if (isFloatNum(IMRArray[loop]->OperandField)) {
+				// 부동소수점이므로 6바이트로 표현
+				fprintf(fptr_list, "%012X\n", IMRArray[loop]->ObjectCode);
 			} else {
-				fprintf(fptr_list, "\n");	// 그외의 경우 object code 생략
+				// C'XX' 혹은 X'XX' 일때 예외처리
+				len = ComputeLen(IMRArray[loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
+				if (len == 1) {	// 1바이트의 경우
+					fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
+				}
+				else if (len == 2) {	// 2바이트의 경우
+					fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+				}
+				else if (len == 3) {	// 3바이트의 경우
+					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
+				}
+				else {
+					fprintf(fptr_list, "\n");	// 그외의 경우 object code 생략
+				}
 			}
 		}
 	}
@@ -593,10 +639,16 @@ void CreateObjectCode() {	// 목적파일 생성
 		for (xx = 0; xx<x; xx++) {
 			// 한줄에 들어갈 수 있는 최대의 목적코드를 출력하기 위한 반복문
 			// 콘솔창과 파일에 모두 출력
-			if ((strcmp(temp_operator[xx], "BYTE") == 0) && (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x')) {
-				// 16진수로 표현한 1바이트의 값일 경우 1바이트의 형식에 맞춰 출력
-				printf("%02X", temp_objectcode[xx]);
-				fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
+			if ((strcmp(temp_operator[xx], "BYTE") == 0)) {
+				if (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x') {
+					// 16진수로 표현한 1바이트의 값일 경우 1바이트의 형식에 맞춰 출력
+					printf("%02X", temp_objectcode[xx]);
+					fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
+				} else if (isFloatNum(temp_operand[xx])) {
+					// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
+					printf("%012X", temp_objectcode[xx]);
+					fprintf(fptr_obj, "^%012X", temp_objectcode[xx]);
+				}
 			}
 			else {
 				// 명령어의 형식에 따라 달라지는 길이에 맞춰서 출력
@@ -625,9 +677,15 @@ void CreateObjectCode() {	// 목적파일 생성
 						fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
 					}
 				} else {
-					// 명령어가 아닐 경우 기본 3바이트 형식에 맞춰 출력
-					printf("%06X", temp_objectcode[xx]);
-					fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+					if (isFloatNum(temp_operand[xx])) {
+						// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
+						printf("%012X", temp_objectcode[xx]);
+						fprintf(fptr_obj, "^%012X", temp_objectcode[xx]);
+					} else {
+						// 명령어가 아닐 경우 기본 3바이트 형식에 맞춰 출력
+						printf("%06X", temp_objectcode[xx]);
+						fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+					}
 				}
 			}
 		}
@@ -774,15 +832,25 @@ void main(void)
 							LOCCTR[LocctrCounter] += 1;	// 기존에 1바이트 더 추가
 						}
 					}
-					else if (!strcmp(opcode, "WORD"))	// 3바이트(1 WORD) 확보
-						LOCCTR[LocctrCounter] = loc + 3;
-					else if (!strcmp(opcode, "RESW"))	// 피연산자 갯수의 WORD 만큼 메모리 확보
+					else if (!strcmp(opcode, "WORD")) {	// 3바이트(1 WORD) 확보
+						if (isFloatNum(operand)) {
+							// 부동소수점은 6바이트 사용하므로
+							LOCCTR[LocctrCounter] = loc + 6;
+						} else {
+							LOCCTR[LocctrCounter] = loc + 3;
+						}
+					} else if (!strcmp(opcode, "RESW"))	// 피연산자 갯수의 WORD 만큼 메모리 확보
 						LOCCTR[LocctrCounter] = loc + 3 * StrToDec(operand);
 					else if (!strcmp(opcode, "RESB"))	// 피연산자 갯수의 바이트만큼 메모리 확보
 						LOCCTR[LocctrCounter] = loc + StrToDec(operand);
-					else if (!strcmp(opcode, "BYTE"))	// 1바이트 확보
-						LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
-					else if (!strcmp(opcode, "BASE")
+					else if (!strcmp(opcode, "BYTE")) {	// 1바이트 확보
+						if (isFloatNum(operand)) {
+							// 부동소수점은 6바이트 사용하므로
+							LOCCTR[LocctrCounter] = loc + 6;
+						} else {
+							LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
+						}
+					} else if (!strcmp(opcode, "BASE")
 						|| !strcmp(opcode, "NOBASE")
 						|| !strcmp(opcode, "EXTDEF")
 						|| !strcmp(opcode, "EXTREF")) {
@@ -926,7 +994,7 @@ void main(void)
 					// 심볼테이블에서 피연산자를 찾을 수 없을 때
 					ReadFlag(operand);	// 피연산자에 붙어있는 플래그가 #인지 검사하기위함 
 					if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
-						inst_fmt_address = ConvertNumber(StrToDec(operand), 5);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
+						inst_fmt_address = ConvertNumber(StrToDec(operand), (inst_fmt_byte == 4) ? 5 : 3);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
 					}
 					else {
 						// 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
@@ -984,33 +1052,44 @@ void main(void)
 		else if (!strcmp(opcode, "WORD")) {
 			// 1 WORD의 크기에 10진수 대입
 			strcpy(operand, IMRArray[loop]->OperandField);
-			IMRArray[loop]->ObjectCode = StrToDec(operand);
+			if (isFloatNum(operand)) {
+				// 부동소수점이므로 부동소수점 계산
+				IMRArray[loop]->ObjectCode = ConvertFloatNum(operand);
+			} else {
+				IMRArray[loop]->ObjectCode = StrToDec(operand);
+			}
 		}
 		else if (!strcmp(opcode, "BYTE")) {
 			// 1 Byte의 값을 여러개 혹은 한개 대입 (ASCII code 혹은 16진수)
 			strcpy(operand, IMRArray[loop]->OperandField);
 			IMRArray[loop]->ObjectCode = 0;
 
-			// 값이 ASCII code일 경우 값 계산후 objectcode에 대입
-			if (operand[0] == 'C' || operand[0] == 'c' && operand[1] == '\'') {
-				for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
-					IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + (int)operand[x];
-					IMRArray[loop]->ObjectCode <<= 8;
-				}
+			if (isFloatNum(operand)) {
+				// 부동소수점이므로 부동소수점 계산
+				IMRArray[loop]->ObjectCode = ConvertFloatNum(operand);
 			}
-
-			// 값이 16진수일 경우 값 계산후 objectcode에 대입
-			if (operand[0] == 'X' || operand[0] == 'x' && operand[1] == '\'') {
-				char *operand_ptr;
-				operand_ptr = &operand[2];
-				*(operand_ptr + 2) = '\0';
-				for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
-					IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + StrToHex(operand_ptr);
-					IMRArray[loop]->ObjectCode <<= 8;
+			else {
+				// 값이 ASCII code일 경우 값 계산후 objectcode에 대입
+				if (operand[0] == 'C' || operand[0] == 'c' && operand[1] == '\'') {
+					for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
+						IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + (int)operand[x];
+						IMRArray[loop]->ObjectCode <<= 8;
+					}
 				}
-			}
 
-			IMRArray[loop]->ObjectCode >>= 8;	// 각 반복문 맨마지막에 1바이트 밀었던 것을 다시 원위치로 변경
+				// 값이 16진수일 경우 값 계산후 objectcode에 대입
+				if (operand[0] == 'X' || operand[0] == 'x' && operand[1] == '\'') {
+					char *operand_ptr;
+					operand_ptr = &operand[2];
+					*(operand_ptr + 2) = '\0';
+					for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
+						IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + StrToHex(operand_ptr);
+						IMRArray[loop]->ObjectCode <<= 8;
+					}
+				}
+
+				IMRArray[loop]->ObjectCode >>= 8;	// 각 반복문 맨마지막에 1바이트 밀었던 것을 다시 원위치로 변경
+			}
 		}
 		else if (!strcmp(opcode, "BASE")) {
 			// BASE 어셈블러 지시자일 경우 해당 위치를 base 레지스터에 넣고 base relative addressing mode의 기준점으로 삼음
