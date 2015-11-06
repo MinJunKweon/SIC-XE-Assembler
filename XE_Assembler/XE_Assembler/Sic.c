@@ -18,7 +18,7 @@
 #define EXT_SIZE 20		// EXTREF과 EXTDEF 테이블의 레코드 최대 개수
 #define ESD_SIZE 20		// ESD의 레코드 최대 개수
 
-#define TEST_FNAME "x:\\3.asm"
+#define TEST_FNAME "x:\\5.asm"
 
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable {	// OP 테이블의 각각의 레코드 구조체
@@ -640,11 +640,9 @@ void CreateProgramList() {	// 리스트 파일 생성
 				else if (len == 2) {	// 2바이트의 경우
 					fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
 				}
-				else if (len == 3) {	// 3바이트의 경우
-					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3바이트 출력
-				}
 				else {
-					fprintf(fptr_list, "\n");	// 그외의 경우 object code 생략
+					// 그외의 경우
+					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 그외의 경우 object code 생략
 				}
 			}
 		}
@@ -661,7 +659,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	int first_index;
 	int last_index;
 	int x, xx;
-	int loop;
+	int loop, len = 0;
 
 	char temp_operator[12][10];
 	char temp_operand[12][10];
@@ -693,22 +691,22 @@ void CreateObjectCode() {	// 목적파일 생성
 		for (x = 0; x < ExtDefCounter; x++) {
 			// 정의 레코드 작성 (레이블 이름, 주소)
 			// 콘솔창과 파일 둘다 출력
-			printf("%-6s%06X\n", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
-			fprintf(fptr_obj, "^%-6s^%06X\n", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
+			printf("%-6s%06X", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
+			fprintf(fptr_obj, "^%-6s^%06X", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
 		}
 		printf("\n");
 		fprintf(fptr_obj, "\n");
 	}
 
-	if (ExtDefCounter > 0) {
+	if (ExtRefCounter > 0) {
 		// 출력할 참조 레코드가 있을 경우 정의 레코드 출력
 		printf("R");
 		fprintf(fptr_obj, "R");
-		for (x = 0; x < ExtDefCounter; x++) {
+		for (x = 0; x < ExtRefCounter; x++) {
 			// 참조 레코드 작성 (외부 참조 레이블 이름)
 			// 콘솔창과 파일 둘다 출력
-			printf("%-6s\n", ExtRefTAB[x].Label);
-			fprintf(fptr_obj, "^%-6sX\n", ExtRefTAB[x].Label);
+			printf("%-6s", ExtRefTAB[x].Label);
+			fprintf(fptr_obj, "^%-6s", ExtRefTAB[x].Label);
 		}
 		printf("\n");
 		fprintf(fptr_obj, "\n");
@@ -757,9 +755,11 @@ void CreateObjectCode() {	// 목적파일 생성
 					if (isFloatNum(IMRArray[loop + 1]->OperandField)) {
 						// 부동소수점일 경우 6바이트 추가
 						temp_address += 6;
-					} else {
+					} else if (!strcmp(IMRArray[loop + 1]->OperatorField, "BYTE")) {
 						// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
 						temp_address += ComputeLen(IMRArray[loop + 1]->OperandField);
+					} else if (!strcmp(IMRArray[loop + 1]->OperatorField, "WORD")) {
+						temp_address += 3;
 					}
 				}
 			}
@@ -788,6 +788,9 @@ void CreateObjectCode() {	// 목적파일 생성
 					// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
 					printf("%012llX", temp_objectcode[xx]);
 					fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
+				} else {
+					printf("%06X", temp_objectcode[xx]);
+					fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
 				}
 			}
 			else {
@@ -822,7 +825,7 @@ void CreateObjectCode() {	// 목적파일 생성
 						printf("%012llX", temp_objectcode[xx]);
 						fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
 					} else {
-						// 명령어가 아닐 경우 기본 3바이트 형식에 맞춰 출력
+						// WORD일 경우
 						printf("%06X", temp_objectcode[xx]);
 						fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
 					}
@@ -851,7 +854,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	for (loop = 0; loop < ESDCounter; loop++) {
 		// ESD의 모든 레코드들을 수정레코드로 출력
 		// 링킹과 재배치가 필요함을 로더에게 알리기 위함
-		printf("M%06X%02X^%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
+		printf("M%06X%02X%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
 		fprintf(fptr_obj, "M^%06X^%02X^%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
 	}
 
@@ -872,6 +875,7 @@ void main(void)
 	char label[32];
 	char opcode[32];
 	char operand[32];
+	char tempLabel[LABEL_LENGTH];	// 외부 참조, 외부 정의 레이블들을 담기 위한 임시 변수
 
 	int loc = 0;
 	int line = 0;
@@ -880,7 +884,8 @@ void main(void)
 	int is_comment;
 	int loader_flag = 0;
 	int start_line = 0;
-
+	int tempLabelIdx = 0;
+	int i = 0;
 	// Intro Part
 	printf(" ******************************************************************************\n");
 	printf(" * Program: SIC ASSEMBYER                                                     *\n");
@@ -998,10 +1003,33 @@ void main(void)
 							LOCCTR[LocctrCounter] = loc + ComputeLen(operand);
 						}
 					} else if (!strcmp(opcode, "BASE")
-						|| !strcmp(opcode, "NOBASE")
-						|| !strcmp(opcode, "EXTDEF")
-						|| !strcmp(opcode, "EXTREF")) {
+						|| !strcmp(opcode, "NOBASE")) {
 						// 별달리 처리가 필요한 Assembler Directive가 아닐 경우 Loc을 대입
+						LOCCTR[LocctrCounter] = loc;
+					}
+					else if (!strcmp(opcode, "EXTDEF")
+						|| !strcmp(opcode, "EXTREF")) {
+						// 외부 참조, 정의 레이블일 경우 , 단위로 테이블에 추가
+						i = 0; tempLabelIdx = 0;
+						while (1) {
+							if (operand[i] == ',' || operand[i] == '\0') {
+								// , 혹은 \0을 만날 경우 기록
+								tempLabel[tempLabelIdx] = '\0';
+								// 각기 다른 테이블에 기록
+								if (!strcmp(opcode, "EXTDEF")) {
+									RecordEXTDEF(tempLabel);
+								}
+								else if (!strcmp(opcode, "EXTREF")) {
+									RecordEXTREF(tempLabel);
+								}
+								tempLabelIdx = 0;
+								if (operand[i] == '\0') break;	// \0을 만났을 경우 break;
+							}
+							else {
+								tempLabel[tempLabelIdx++] = operand[i];
+							}
+							i++;
+						}
 						LOCCTR[LocctrCounter] = loc;
 					}
 					else { // 정의되지 않은 OP code이므로 경고후 프로그램 종료
@@ -1047,10 +1075,9 @@ void main(void)
 	unsigned long inst_fmt_extended;	// 플래그비트 e를 나타내는 플래그비트 변수
 	unsigned long inst_fmt_address;	// 피연산자 부분을 나타내는 변수 (필요에 의해서 직접적인 상수가 들어갈 수도 있다. ex. Immediate Addressing Mode)
 	int inst_fmt_byte;		// 몇형식 명령어인지 나타내는 변수 (바이트 수)
-	int i, regCharIdx, tempLabelIdx;	// 인덱스 변수들
+	int regCharIdx;	// 인덱스 변수들
 	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
-	char tempLabel[LABEL_LENGTH];	// 외부 참조, 외부 정의 레이블들을 담기 위한 임시 변수
-
+	
 	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
 	int base_register = -1;	// BASE 어셈블러 지시자가 나오지 않을 경우 base relative addressing mode를 사용하지 못하게 하도록 하기 위한 기본값 -1
 
@@ -1267,26 +1294,6 @@ void main(void)
 			IMRArray[loop]->ObjectCode = 0;
 			// base register 해제
 			base_register = -1;
-		}
-		else if (!strcmp(opcode, "EXTDEF") || !strcmp(opcode, "EXTREF")) {
-			strcpy(operand, IMRArray[loop]->OperandField);
-			IMRArray[loop]->ObjectCode = 0;
-			i = 0; tempLabelIdx = 0;
-			while (1) {
-				if (operand[i] == ',' || operand[i] == '\0') {
-					tempLabel[tempLabelIdx] = '\0';
-					if (!strcmp(opcode, "EXTDEF")) {
-						RecordEXTDEF(tempLabel);
-					} else if (!strcmp(opcode, "EXTREF")) {
-						RecordEXTREF(tempLabel);
-					}
-					tempLabelIdx = 0;
-					if (operand[i] == '\0') break;
-				} else {
-					tempLabel[tempLabelIdx++] = operand[i];
-				}
-				i++;
-			}
 		}
 	}
 
