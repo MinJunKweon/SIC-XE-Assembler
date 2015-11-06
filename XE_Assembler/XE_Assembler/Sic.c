@@ -15,6 +15,8 @@
 #define SYMTAB_SIZE 20	// 심볼테이블의 레코드 최대 개수
 #define IMR_SIZE 100	// 중간파일의 레코드 최대 개수
 #define RLD_SIZE 20		// Relocation DIctionary의 레코드 최대 개수
+#define EXT_SIZE 20		// EXTREF과 EXTDEF 테이블의 레코드 최대 개수
+#define ESD_SIZE 20		// ESD의 레코드 최대 개수
 
 #define TEST_FNAME "x:\\3.asm"
 
@@ -30,6 +32,17 @@ typedef struct SymbolTable { // 심볼테이블의 각각의 레코드 구조체
 	int Address;	// 레이블이 가리키는 주소
 }SIC_SYMTAB;
 
+// 외부 참조 레이블을 갖는 레코드
+typedef struct EXTREF {
+	char Label[LABEL_LENGTH];
+} EXTREF;
+
+// 타 프로그램에서 외부 참조가 가능한 레이블을 갖는 레코드
+typedef struct EXTDEF {
+	char Label[LABEL_LENGTH];
+	int Address;	// 해당 레이블의 위치
+} EXTDEF;
+
 // 레지스터 테이블을 구성하는 레지스터 레코드
 typedef struct RegisterTable {
 	char name[LABEL_LENGTH];	// 레지스터 Mnemonic
@@ -41,6 +54,14 @@ typedef struct RelocationDictionary {
 	int Address;	// 재배치가 필요한 위치
 	int Nibbles;	// 재배치가 필요한 길이
 } RLD;
+
+// 외부 참조 레이블을 참조했을 때, 재배치가 필요하므로 그 부분을 담는 Dictionary 레코드
+typedef struct ExternalSymbolDictionary {
+	char Label[LABEL_LENGTH];	// 외부 참조 레이블
+	char sign;		// 음수, 양수를 나타냄
+	int Address;	// 재배치가 필요한 위치
+	int Nibbles;	// 재배치가 필요한 길이
+} ESD;
 
 typedef struct IntermediateRecord {	// 중간파일 구조
 	unsigned short int LineIndex;	// 소스코드의 행을 저장하는 변수
@@ -55,6 +76,7 @@ typedef struct IntermediateRecord {	// 중간파일 구조
 int Counter;	// Opcode찾을 때 그 명령어의 위치를 가리키기 위한 변수
 int RegIdx;		// 레지스터의 위치를 가리킴. Counter 변수와 역할 비슷
 int SymIdx;		// Label의 위치를 가리킴. Counter 변수와 역할 비슷
+int ExtRefIdx;	// ExtRefTAB에서 찾은 외부 참조 레이블의 위치를 가리킴. Counter 변수와 역할 비슷
 int LOCCTR[IMR_SIZE];	// 각 명령어들의 메모리를 세기위한 Location Counter. 중간파일의 개수와 동일하다
 int LocctrCounter = 0;	// LOCCTR의 Index 변수
 int Flag;
@@ -66,10 +88,14 @@ int start_address;	// 프로그램의 시작 주소
 int program_length;	// 프로그램의 총 길이
 int ArrayIndex = 0;	// 중간파일을 각각 가리키기 위한 Index 변수
 int RLDCounter = 0;	// 재배치가 필요한 부분의 개수를 세고 가리키기 위한 변수 (수정 레코드)
+int ExtRefCounter = 0;	// 참조 레코드의 개수
+int ExtDefCounter = 0;	// 정의 레코드의 개수
+int ESDCounter = 0;		// ESD 레코드의 개수를 세고 가리키기 위한 변수
 
 unsigned short int FoundOnSymtab_flag = 0;	// 해당 레이블을 심볼테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnRegTab_flag = 0;	// 레지스터 테이블에 해당 레지스터의 형상이 있는지 확인
+unsigned short int FoundOnExtRefTab_flag = 0;	// 외부 참조 레이블 중에 해당 레이블이 있는지 확인
 
 // 이 변수들은 모두 소스코드상의 표기법을 가짐
 char Buffer[BUFFER_SIZE];	// 각 소스코드를 읽기위한 버퍼 변수
@@ -79,9 +105,13 @@ char Operand[LABEL_LENGTH];	// 피연산자를 임시로 저장하기 위한 변수
 
 // 각각 프로그램당 1개씩 필요하므로 2차원 배열로 생성
 SIC_SYMTAB SYMTAB[SYMTAB_SIZE];	// 심볼테이블 변수
+EXTREF ExtRefTAB[EXT_SIZE];		// 참조 레코드를 위한 테이블 변수
+EXTDEF ExtDefTAB[EXT_SIZE];		// 정의 레코드를 위한 테이블 변수
 IntermediateRec* IMRArray[IMR_SIZE];	// 중간파일 변수
 RLD RLDArray[RLD_SIZE];	// 재배치가 필요한 부분을 저장하기 위한 변수
+ESD ESDArray[ESD_SIZE];
 
+// 레지스터 테이블
 static SIC_XE_REGISTER REG_TAB[] =
 {
 	{ "A", 0 },
@@ -228,6 +258,47 @@ void RecordRLD(char* Mnemonic, int loc) {	// 재배치가 필요한 부분 RLDArray에 추�
 	RLDCounter++;	// RLDCounter에 개수 1증가
 }
 
+void RecordESD(char * Mnemonic, int loc, int byte) {
+	// 수정레코드 작성을 위한 기록
+	ESDArray[ESDCounter].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
+	ESDArray[ESDCounter].sign = '+';	// 양수일 경우
+	if (Mnemonic[0] == '-') {
+		ESDArray[ESDCounter].sign = '-';	// 음수일 경우
+		Mnemonic += 1;	// 음수 기호 제거
+	} else if (Mnemonic[0] == '+') {
+		Mnemonic += 1;	// 양수 기호 제거
+	}
+	ESDArray[ESDCounter].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
+	if (byte == 4) {
+		ESDArray[ESDCounter].Nibbles += 2;	// 4형식 명령어의 피연산자는 5 니블 이므로 2 니블 추가
+	}
+	strcpy(ESDArray[ESDCounter].Label, Mnemonic);	// ESD에 해당 형상기호를 기록
+	ESDCounter++;	// RLDCounter에 개수 1증가
+}
+
+void RecordEXTREF(char * Mnemonic) {
+	strcpy(ExtRefTAB[ExtRefCounter].Label, Mnemonic);	// 외부 참조 레이블들을 기록
+	ExtRefCounter++;	// ESDCounter에 개수 1증가
+}
+
+void RecordEXTDEF(char * Mnemonic) {
+	strcpy(ExtDefTAB[ExtDefCounter].Label, Mnemonic);	// 외부 정의 레이블들을 기록
+	ExtDefCounter++;	// RLDCounter에 개수 1증가
+}
+
+int RecordEXTDEFLoc() {
+	// 외부 정의 레이블의 주소를 SYMTAB에서 찾아서 기록
+	int i;
+	for (i = 0; i < ExtDefCounter; i++) {
+		if (SearchSymtab(ExtDefTAB[i].Label)) {
+			ExtDefTAB[i].Address = SYMTAB[SymIdx].Address;
+		} else {
+			return 1;	// SYMTAB에 없으므로 에러 처리
+		}
+	}
+	return 0;	// 모든 외부 정의 레이블들을 찾아서 기록함
+}
+
 int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
 	if (ReadFlag(label)) { // Immediate Addressing Mode이거나 Indirect Addressing Mode일 경우 예외처리
@@ -271,6 +342,22 @@ int SearchRegTab(char * Mnemonic) {	// 미리 정의된 레지스터 테이블에서 해당 레지
 		}
 	}
 	return (FoundOnRegTab_flag);	// 없으면 0 반환
+}
+
+int SearchExtRefTAB(char * Mnemonic) {
+	// 삽입되어있는 ExtRefTAB에 해당 레이블이 있는지 확인
+	if (ReadFlag(Mnemonic)) {	// 맨 앞에 플래그가 붙어있다면
+		Mnemonic += 1;	// 플래그 삭제
+	}
+	FoundOnExtRefTab_flag = 0;
+	for (int i = 0; i < ExtRefCounter; i++) {
+		if (!strcmp(Mnemonic, ExtRefTAB[i].Label)) {	// 외부 참조 레이블이 있을 경우
+			ExtRefIdx = i;	// 외부 참조 레이블의 위치를 반환
+			FoundOnExtRefTab_flag = 1;	// 찾음을 표현하기 위한 플래그
+			break;
+		}
+	}
+	return (FoundOnExtRefTab_flag);
 }
 
 int isNum(char * str) {	// 문자열을 이루고 있는 모든 원소들이 숫자로 이루어져있는지 확인
@@ -599,6 +686,34 @@ void CreateObjectCode() {	// 목적파일 생성
 		loop++;
 	}
 
+	if (ExtDefCounter > 0) {
+		// 출력할 정의 레코드가 있을 경우 정의 레코드 출력
+		printf("D");
+		fprintf(fptr_obj, "D");
+		for (x = 0; x < ExtDefCounter; x++) {
+			// 정의 레코드 작성 (레이블 이름, 주소)
+			// 콘솔창과 파일 둘다 출력
+			printf("%-6s%06X\n", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
+			fprintf(fptr_obj, "^%-6s^%06X\n", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
+		}
+		printf("\n");
+		fprintf(fptr_obj, "\n");
+	}
+
+	if (ExtDefCounter > 0) {
+		// 출력할 참조 레코드가 있을 경우 정의 레코드 출력
+		printf("R");
+		fprintf(fptr_obj, "R");
+		for (x = 0; x < ExtDefCounter; x++) {
+			// 참조 레코드 작성 (외부 참조 레이블 이름)
+			// 콘솔창과 파일 둘다 출력
+			printf("%-6s\n", ExtRefTAB[x].Label);
+			fprintf(fptr_obj, "^%-6sX\n", ExtRefTAB[x].Label);
+		}
+		printf("\n");
+		fprintf(fptr_obj, "\n");
+	}
+
 	while (1)	// 무한루프 시작
 	{
 		first_address = IMRArray[loop]->Loc;	// 한줄의 시작주소를 저장
@@ -725,11 +840,19 @@ void CreateObjectCode() {	// 목적파일 생성
 	}
 
 	// 수정레코드 출력부분
+	// RLD 부분
 	for (loop = 0; loop < RLDCounter; loop++) {
 		// RLD의 모든 레코드들을 수정레코드로 출력
 		// 재배치가 필요함을 로더에게 알리기위함
 		printf("M%06X%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
 		fprintf(fptr_obj, "M^%06X^%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
+	}
+	// ESD 부분
+	for (loop = 0; loop < ESDCounter; loop++) {
+		// ESD의 모든 레코드들을 수정레코드로 출력
+		// 링킹과 재배치가 필요함을 로더에게 알리기 위함
+		printf("M%06X%02X^%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
+		fprintf(fptr_obj, "M^%06X^%02X^%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
 	}
 
 	// 엔드 레코드를 통해 프로그램의 시작주소를 출력
@@ -904,6 +1027,12 @@ void main(void)
 	program_length = LOCCTR[LocctrCounter - 2] - LOCCTR[0];
 	// END 지시자를 만났을 경우 END 지시자 바로 이전 소스코드의 메모리 위치와 시작주소를 빼서 총 프로그램 길이 계산
 
+	if (RecordEXTDEFLoc()) {
+		printf("ERROR: Isn't exist External Define Label\n");	// EXTDEF 중에 심볼테이블에서 찾을 수 없는 레이블이 있을 경우 예외처리
+		fclose(fptr);
+		exit(1);
+	}
+
 	// Pass 1에서 생성된 심볼테이블 출력
 	CreateSymbolTable();
 
@@ -918,9 +1047,10 @@ void main(void)
 	unsigned long inst_fmt_extended;	// 플래그비트 e를 나타내는 플래그비트 변수
 	unsigned long inst_fmt_address;	// 피연산자 부분을 나타내는 변수 (필요에 의해서 직접적인 상수가 들어갈 수도 있다. ex. Immediate Addressing Mode)
 	int inst_fmt_byte;		// 몇형식 명령어인지 나타내는 변수 (바이트 수)
-	int i, regCharIdx;
+	int i, regCharIdx, tempLabelIdx;	// 인덱스 변수들
 	char regName[3];	// 레지스터 이름을 비교하기위해 담아놓는 임시변수
-	
+	char tempLabel[LABEL_LENGTH];	// 외부 참조, 외부 정의 레이블들을 담기 위한 임시 변수
+
 	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
 	int base_register = -1;	// BASE 어셈블러 지시자가 나오지 않을 경우 base relative addressing mode를 사용하지 못하게 하도록 하기 위한 기본값 -1
 
@@ -934,6 +1064,7 @@ void main(void)
 		inst_fmt_address = 0;
 		inst_fmt_byte = 0;
 		regName[0] = '\0';
+		tempLabel[0] = '\0';
 
 		strcpy(opcode, IMRArray[loop]->OperatorField);	// op code 부분 복사
 
@@ -1020,8 +1151,11 @@ void main(void)
 					if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
 						inst_fmt_address = ConvertNumber(StrToDec(operand), (inst_fmt_byte == 4) ? 5 : 3);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
 					}
-					else {
-						// 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
+					else if (SearchExtRefTAB(operand)) {
+						inst_fmt_address = 0;
+						RecordESD(operand, IMRArray[loop]->Loc, inst_fmt_byte);
+					} else {
+						// 외부참조 레이블도 아니고 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
 						fclose(fptr);
 						printf("ERROR: Label isn't exist [%s]\n", operand);
 						exit(1);
@@ -1134,11 +1268,25 @@ void main(void)
 			// base register 해제
 			base_register = -1;
 		}
-		else if (!strcmp(opcode, "EXTDEF")) {
-			
-		}
-		else if (!strcmp(opcode, "EXTREF")) {
-
+		else if (!strcmp(opcode, "EXTDEF") || !strcmp(opcode, "EXTREF")) {
+			strcpy(operand, IMRArray[loop]->OperandField);
+			IMRArray[loop]->ObjectCode = 0;
+			i = 0; tempLabelIdx = 0;
+			while (1) {
+				if (operand[i] == ',' || operand[i] == '\0') {
+					tempLabel[tempLabelIdx] = '\0';
+					if (!strcmp(opcode, "EXTDEF")) {
+						RecordEXTDEF(tempLabel);
+					} else if (!strcmp(opcode, "EXTREF")) {
+						RecordEXTREF(tempLabel);
+					}
+					tempLabelIdx = 0;
+					if (operand[i] == '\0') break;
+				} else {
+					tempLabel[tempLabelIdx++] = operand[i];
+				}
+				i++;
+			}
 		}
 	}
 
