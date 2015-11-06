@@ -17,8 +17,7 @@
 #define RLD_SIZE 20		// Relocation DIctionary의 레코드 최대 개수
 #define EXT_SIZE 20		// EXTREF과 EXTDEF 테이블의 레코드 최대 개수
 #define ESD_SIZE 20		// ESD의 레코드 최대 개수
-
-#define TEST_FNAME "x:\\5.asm"
+#define CSECT_SIZE 10	// 소스파일 내에 존재할 수 있는 프로그램의 개수
 
 /***************************** DECLERATE VARIABLE ****************************/
 typedef struct OperationCodeTable {	// OP 테이블의 각각의 레코드 구조체
@@ -83,14 +82,16 @@ int Flag;
 int Index;
 int j;
 int ManchineCode;
-int SymtabCounter = 0;	// 심볼테이블의 개수를 세고 가리키기 위한 변수
-int start_address;	// 프로그램의 시작 주소
-int program_length;	// 프로그램의 총 길이
-int ArrayIndex = 0;	// 중간파일을 각각 가리키기 위한 Index 변수
-int RLDCounter = 0;	// 재배치가 필요한 부분의 개수를 세고 가리키기 위한 변수 (수정 레코드)
-int ExtRefCounter = 0;	// 참조 레코드의 개수
-int ExtDefCounter = 0;	// 정의 레코드의 개수
-int ESDCounter = 0;		// ESD 레코드의 개수를 세고 가리키기 위한 변수
+int SymtabCounter[CSECT_SIZE] = { 0, };	// 심볼테이블의 개수를 세고 가리키기 위한 변수
+int start_address[CSECT_SIZE] = { 0, };	// 프로그램의 시작 주소
+int program_length[CSECT_SIZE] = { 0, };// 프로그램의 총 길이
+int ArrayIndex[CSECT_SIZE] = { 0, };	// 중간파일을 각각 가리키기 위한 Index 변수
+int RLDCounter[CSECT_SIZE] = { 0, };	// 재배치가 필요한 부분의 개수를 세고 가리키기 위한 변수 (수정 레코드)
+int ExtRefCounter[CSECT_SIZE] = { 0, };	// 참조 레코드의 개수
+int ExtDefCounter[CSECT_SIZE] = { 0, };	// 정의 레코드의 개수
+int ESDCounter[CSECT_SIZE] = { 0, };	// ESD 레코드의 개수를 세고 가리키기 위한 변수
+int CSectCounter = 0;	// 소스코드 내에 존재하는 프로그램의 개수를 세기 위한 변수
+char End_operand[LABEL_LENGTH];	// END 어셈블러 지시자의 오퍼랜드를 저장한다. (엔드 레코드를 작성하기 위함)
 
 unsigned short int FoundOnSymtab_flag = 0;	// 해당 레이블을 심볼테이블에서 찾았다는 것을 반환하기 위함
 unsigned short int FoundOnOptab_flag = 0;	// 해당 Opcode의 Mnemonic을 OP 테이블에서 찾았다는 것을 반환하기 위함
@@ -104,12 +105,12 @@ char Mnemonic[LABEL_LENGTH];	// Mnemnic을 임시로 저장하기 위한 변수
 char Operand[LABEL_LENGTH];	// 피연산자를 임시로 저장하기 위한 변수
 
 // 각각 프로그램당 1개씩 필요하므로 2차원 배열로 생성
-SIC_SYMTAB SYMTAB[SYMTAB_SIZE];	// 심볼테이블 변수
-EXTREF ExtRefTAB[EXT_SIZE];		// 참조 레코드를 위한 테이블 변수
-EXTDEF ExtDefTAB[EXT_SIZE];		// 정의 레코드를 위한 테이블 변수
-IntermediateRec* IMRArray[IMR_SIZE];	// 중간파일 변수
-RLD RLDArray[RLD_SIZE];	// 재배치가 필요한 부분을 저장하기 위한 변수
-ESD ESDArray[ESD_SIZE];
+SIC_SYMTAB SYMTAB[CSECT_SIZE][SYMTAB_SIZE];	// 심볼테이블 변수
+EXTREF ExtRefTAB[CSECT_SIZE][EXT_SIZE];		// 참조 레코드를 위한 테이블 변수
+EXTDEF ExtDefTAB[CSECT_SIZE][EXT_SIZE];		// 정의 레코드를 위한 테이블 변수
+IntermediateRec* IMRArray[CSECT_SIZE][IMR_SIZE];	// 중간파일 변수
+RLD RLDArray[CSECT_SIZE][RLD_SIZE];	// 재배치가 필요한 부분을 저장하기 위한 변수
+ESD ESDArray[CSECT_SIZE][ESD_SIZE];
 
 // 레지스터 테이블
 static SIC_XE_REGISTER REG_TAB[] =
@@ -244,54 +245,54 @@ void RecordSymtab(char* label) {	// 심볼테이블에 해당 레이블의 위치와 레이블 입�
 	if (ReadFlag(label)) { // Immediate or Indirect Addressing Mode 예외 처리
 		label = label + 1;
 	}
-	strcpy(SYMTAB[SymtabCounter].Label, label);	// Symbol 테이블에 Label 추가
-	SYMTAB[SymtabCounter].Address = LOCCTR[LocctrCounter - 1];	// 해당 Label의 메모리 위치도 기록
-	SymtabCounter++;	// 1개 추가되었으므로 카운트 1증가
+	strcpy(SYMTAB[CSectCounter][SymtabCounter[CSectCounter]].Label, label);	// Symbol 테이블에 Label 추가
+	SYMTAB[CSectCounter][SymtabCounter[CSectCounter]].Address = LOCCTR[LocctrCounter - 1];	// 해당 Label의 메모리 위치도 기록
+	SymtabCounter[CSectCounter]++;	// 1개 추가되었으므로 카운트 1증가
 }
 
-void RecordRLD(char* Mnemonic, int loc) {	// 재배치가 필요한 부분 RLDArray에 추가
-	RLDArray[RLDCounter].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
-	RLDArray[RLDCounter].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
+void RecordRLD(char* Mnemonic, int loc, int idx) {	// 재배치가 필요한 부분 RLDArray에 추가
+	RLDArray[idx][RLDCounter[idx]].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
+	RLDArray[idx][RLDCounter[idx]].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
 	if (ReadFlag(Mnemonic)) {	// 4형식일 경우 1바이트(2 니블)만큼 피연산자가 늘어나므로 추가
-		RLDArray[RLDCounter].Nibbles += 2;
+		RLDArray[idx][RLDCounter[idx]].Nibbles += 2;
 	}
-	RLDCounter++;	// RLDCounter에 개수 1증가
+	RLDCounter[idx]++;	// RLDCounter에 개수 1증가
 }
 
-void RecordESD(char * Mnemonic, int loc, int byte) {
+void RecordESD(char * Mnemonic, int loc, int byte, int idx) {
 	// 수정레코드 작성을 위한 기록
-	ESDArray[ESDCounter].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
-	ESDArray[ESDCounter].sign = '+';	// 양수일 경우
+	ESDArray[idx][ESDCounter[idx]].Address = loc + 1;	// 명령어 시작 위치에서 OP code와 플래그비트 부분을 제외한 시작 위치 저장
+	ESDArray[idx][ESDCounter[idx]].sign = '+';	// 양수일 경우
 	if (Mnemonic[0] == '-') {
-		ESDArray[ESDCounter].sign = '-';	// 음수일 경우
+		ESDArray[idx][ESDCounter[idx]].sign = '-';	// 음수일 경우
 		Mnemonic += 1;	// 음수 기호 제거
 	} else if (Mnemonic[0] == '+') {
 		Mnemonic += 1;	// 양수 기호 제거
 	}
-	ESDArray[ESDCounter].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
+	ESDArray[idx][ESDCounter[idx]].Nibbles = 3;	// 재배치가 필요한 부분 길이 저장 (3형식일 경우 3 니블)
 	if (byte == 4) {
-		ESDArray[ESDCounter].Nibbles += 2;	// 4형식 명령어의 피연산자는 5 니블 이므로 2 니블 추가
+		ESDArray[idx][ESDCounter[idx]].Nibbles += 2;	// 4형식 명령어의 피연산자는 5 니블 이므로 2 니블 추가
 	}
-	strcpy(ESDArray[ESDCounter].Label, Mnemonic);	// ESD에 해당 형상기호를 기록
-	ESDCounter++;	// RLDCounter에 개수 1증가
+	strcpy(ESDArray[idx][ESDCounter[idx]].Label, Mnemonic);	// ESD에 해당 형상기호를 기록
+	ESDCounter[idx]++;	// RLDCounter에 개수 1증가
 }
 
 void RecordEXTREF(char * Mnemonic) {
-	strcpy(ExtRefTAB[ExtRefCounter].Label, Mnemonic);	// 외부 참조 레이블들을 기록
-	ExtRefCounter++;	// ESDCounter에 개수 1증가
+	strcpy(ExtRefTAB[CSectCounter][ExtRefCounter[CSectCounter]].Label, Mnemonic);	// 외부 참조 레이블들을 기록
+	ExtRefCounter[CSectCounter]++;	// ESDCounter에 개수 1증가
 }
 
 void RecordEXTDEF(char * Mnemonic) {
-	strcpy(ExtDefTAB[ExtDefCounter].Label, Mnemonic);	// 외부 정의 레이블들을 기록
-	ExtDefCounter++;	// RLDCounter에 개수 1증가
+	strcpy(ExtDefTAB[CSectCounter][ExtDefCounter[CSectCounter]].Label, Mnemonic);	// 외부 정의 레이블들을 기록
+	ExtDefCounter[CSectCounter]++;	// RLDCounter에 개수 1증가
 }
 
 int RecordEXTDEFLoc() {
 	// 외부 정의 레이블의 주소를 SYMTAB에서 찾아서 기록
 	int i;
-	for (i = 0; i < ExtDefCounter; i++) {
-		if (SearchSymtab(ExtDefTAB[i].Label)) {
-			ExtDefTAB[i].Address = SYMTAB[SymIdx].Address;
+	for (i = 0; i < ExtDefCounter[CSectCounter]; i++) {
+		if (SearchSymtab(ExtDefTAB[CSectCounter][i].Label, CSectCounter)) {
+			ExtDefTAB[CSectCounter][i].Address = SYMTAB[CSectCounter][SymIdx].Address;
 		} else {
 			return 1;	// SYMTAB에 없으므로 에러 처리
 		}
@@ -299,14 +300,14 @@ int RecordEXTDEFLoc() {
 	return 0;	// 모든 외부 정의 레이블들을 찾아서 기록함
 }
 
-int SearchSymtab(char* label) {	// 심볼테이블에서 레이블 찾기
+int SearchSymtab(char* label, int idx) {	// 심볼테이블에서 레이블 찾기
 	FoundOnSymtab_flag = 0;
 	if (ReadFlag(label)) { // Immediate Addressing Mode이거나 Indirect Addressing Mode일 경우 예외처리
 		label = label + 1;
 	}
 
-	for (int k = 0; k <= SymtabCounter; k++) {	// 반복을 통해 찾기
-		if (!strcmp(SYMTAB[k].Label, label)) {	// label이 심볼테이블에 있을 경우
+	for (int k = 0; k <= SymtabCounter[idx]; k++) {	// 반복을 통해 찾기
+		if (!strcmp(SYMTAB[idx][k].Label, label)) {	// label이 심볼테이블에 있을 경우
 			FoundOnSymtab_flag = 1;	// 찾았다는 의미를 표현하기위한 플래그
 			SymIdx = k;	// SymIdx는 심볼테이블에서 어느 위치에 있는지 가리킨다.
 			return (FoundOnSymtab_flag);
@@ -344,14 +345,14 @@ int SearchRegTab(char * Mnemonic) {	// 미리 정의된 레지스터 테이블에서 해당 레지
 	return (FoundOnRegTab_flag);	// 없으면 0 반환
 }
 
-int SearchExtRefTAB(char * Mnemonic) {
+int SearchExtRefTAB(char * Mnemonic, int idx) {
 	// 삽입되어있는 ExtRefTAB에 해당 레이블이 있는지 확인
 	if (ReadFlag(Mnemonic)) {	// 맨 앞에 플래그가 붙어있다면
 		Mnemonic += 1;	// 플래그 삭제
 	}
 	FoundOnExtRefTab_flag = 0;
-	for (int i = 0; i < ExtRefCounter; i++) {
-		if (!strcmp(Mnemonic, ExtRefTAB[i].Label)) {	// 외부 참조 레이블이 있을 경우
+	for (int i = 0; i < ExtRefCounter[idx]; i++) {
+		if (!strcmp(Mnemonic, ExtRefTAB[idx][i].Label)) {	// 외부 참조 레이블이 있을 경우
 			ExtRefIdx = i;	// 외부 참조 레이블의 위치를 반환
 			FoundOnExtRefTab_flag = 1;	// 찾음을 표현하기 위한 플래그
 			break;
@@ -563,7 +564,7 @@ int ComputeLen(char* c) {	// 아스키 코드나 16진수의 길이를 계산
 }
 
 void CreateSymbolTable() {	// 심볼테이블 파일 생성
-	int loop;
+	int loop, csect_loop;
 	FILE *fptr_sym;
 	fptr_sym = fopen("symtab.list", "w");	// 심볼테이블 파일을 쓰기 형태로 엶
 
@@ -573,21 +574,26 @@ void CreateSymbolTable() {	// 심볼테이블 파일 생성
 		exit(1);
 	}
 	
-	// 각 Column 들의 제목을 출력
-	// 콘솔창과 파일에 모두 출력
-	printf("%-10s\t%-4s\n", "LABEL", "LOC");
-	fprintf(fptr_sym, "%-10s\t%-4s\n", "LABEL", "LOC");
-	for (loop = 0; loop < SymtabCounter; loop++) {
-		// 심볼테이블의 레코드들을 각각 출력
+	// 각각의 프로그램 마다 출력
+	for (csect_loop = 0; csect_loop <= CSectCounter; csect_loop++) {
+		// 각 Column 들의 제목을 출력
 		// 콘솔창과 파일에 모두 출력
-		printf("%-10s\t%04X\n", SYMTAB[loop].Label, SYMTAB[loop].Address);
-		fprintf(fptr_sym, "%-10s\t%04X\n", SYMTAB[loop].Label, SYMTAB[loop].Address);
+		printf("%-10s\t%-4s\n", "LABEL", "LOC");
+		fprintf(fptr_sym, "%-10s\t%-4s\n", "LABEL", "LOC");
+		for (loop = 0; loop < SymtabCounter[csect_loop]; loop++) {
+			// 심볼테이블의 레코드들을 각각 출력
+			// 콘솔창과 파일에 모두 출력
+			printf("%-10s\t%04X\n", SYMTAB[csect_loop][loop].Label, SYMTAB[csect_loop][loop].Address);
+			fprintf(fptr_sym, "%-10s\t%04X\n", SYMTAB[csect_loop][loop].Label, SYMTAB[csect_loop][loop].Address);
+		}
+		printf("\n");
+		fprintf(fptr_sym, "\n");
 	}
 	fclose(fptr_sym);	// 파일 출력이 끝났으므로 close
 }
 
 void CreateProgramList() {	// 리스트 파일 생성
-	int loop;
+	int loop, csect_loop;
 	int len;	// 문자나 16진수일 경우 길이 계산을 위한 변수
 	FILE *fptr_list;
 
@@ -599,53 +605,66 @@ void CreateProgramList() {	// 리스트 파일 생성
 		exit(1);
 	}
 
-	// 리스트 파일 내용 출력
-	fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");	// 각 Column 들의 제목
-	for (loop = 0; loop<ArrayIndex; loop++)
-	{
-		len = 0;
-		fprintf(fptr_list, "%04X\t%-10s%-10s%-10s\t", IMRArray[loop]->Loc, IMRArray[loop]->LabelField, IMRArray[loop]->OperatorField, IMRArray[loop]->OperandField);	// 모든 코드들의 공통되는 부분
-		if (!strcmp(IMRArray[loop]->OperatorField, "START")
-			|| !strcmp(IMRArray[loop]->OperatorField, "RESW")
-			|| !strcmp(IMRArray[loop]->OperatorField, "RESB")
-			|| !strcmp(IMRArray[loop]->OperatorField, "BASE")
-			|| !strcmp(IMRArray[loop]->OperatorField, "END")
-			|| !strcmp(IMRArray[loop]->OperatorField, "EXTREF")
-			|| !strcmp(IMRArray[loop]->OperatorField, "EXTDEF"))
-			// Object code 출력이 필요없는 부분들 object code 생략
-			fprintf(fptr_list, "\n");
-		else if (SearchOptab(IMRArray[loop]->OperatorField)) {
-			// operator가 OPTAB에 존재할 경우
-			if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
-				if (ReadFlag(IMRArray[loop]->OperatorField)) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
-					fprintf(fptr_list, "%08X\n", IMRArray[loop]->ObjectCode);	// 4형식일 때 4바이트 출력
-				} else {
-					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 3형식일 때 3바이트 출력
+	for (csect_loop = 0; csect_loop <= CSectCounter; csect_loop++) {
+		// 리스트 파일 내용 출력
+		fprintf(fptr_list, "%-4s\t%-10s%-10s%-10s\t%s\n", "LOC", "LABEL", "OPERATOR", "OPERAND", "OBJECT CODE");	// 각 Column 들의 제목
+		for (loop = 0; loop < ArrayIndex[csect_loop]; loop++)
+		{
+			len = 0;
+			fprintf(fptr_list, "%04X\t%-10s%-10s%-10s\t",
+				IMRArray[csect_loop][loop]->Loc,
+				IMRArray[csect_loop][loop]->LabelField, 
+				IMRArray[csect_loop][loop]->OperatorField,
+				IMRArray[csect_loop][loop]->OperandField);	// 모든 코드들의 공통되는 부분
+			if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "START")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESW")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESB")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "BASE")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "END")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTREF")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTDEF"))
+				// Object code 출력이 필요없는 부분들 object code 생략
+				fprintf(fptr_list, "\n");
+			else if (SearchOptab(IMRArray[csect_loop][loop]->OperatorField)) {
+				// operator가 OPTAB에 존재할 경우
+				if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
+					if (ReadFlag(IMRArray[csect_loop][loop]->OperatorField)) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
+						fprintf(fptr_list, "%08X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 4형식일 때 4바이트 출력
+					}
+					else {
+						fprintf(fptr_list, "%06X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 3형식일 때 3바이트 출력
+					}
 				}
-			} else if (OPTAB[Counter].Format == '2') {	// 해당 명령어가 2형식 명령어일 경우
-				fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
-			} else if (OPTAB[Counter].Format == '1') {	// 해당 명령어가 1형식 명령어일 경우
-				fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
+				else if (OPTAB[Counter].Format == '2') {	// 해당 명령어가 2형식 명령어일 경우
+					fprintf(fptr_list, "%04X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 2바이트 출력
+				}
+				else if (OPTAB[Counter].Format == '1') {	// 해당 명령어가 1형식 명령어일 경우
+					fprintf(fptr_list, "%02X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 1바이트 출력
+				}
 			}
-		} else {
-			if (isFloatNum(IMRArray[loop]->OperandField)) {
-				// 부동소수점이므로 6바이트로 표현
-				fprintf(fptr_list, "%012llX\n", IMRArray[loop]->ObjectCode);
-			} else {
-				// C'XX' 혹은 X'XX' 일때 예외처리
-				len = ComputeLen(IMRArray[loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
-				if (len == 1) {	// 1바이트의 경우
-					fprintf(fptr_list, "%02X\n", IMRArray[loop]->ObjectCode);	// 1바이트 출력
-				}
-				else if (len == 2) {	// 2바이트의 경우
-					fprintf(fptr_list, "%04X\n", IMRArray[loop]->ObjectCode);	// 2바이트 출력
+			else {
+				if (isFloatNum(IMRArray[csect_loop][loop]->OperandField)) {
+					// 부동소수점이므로 6바이트로 표현
+					fprintf(fptr_list, "%012llX\n", IMRArray[csect_loop][loop]->ObjectCode);
 				}
 				else {
-					// 그외의 경우
-					fprintf(fptr_list, "%06X\n", IMRArray[loop]->ObjectCode);	// 그외의 경우 object code 생략
+					// C'XX' 혹은 X'XX' 일때 예외처리
+					len = ComputeLen(IMRArray[csect_loop][loop]->OperandField);	// C, ', ' 혹은 X, ', '를 제외한 원소들이 몇바이트인지 계산하기 위함
+					if (len == 1) {	// 1바이트의 경우
+						fprintf(fptr_list, "%02X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 1바이트 출력
+					}
+					else if (len == 2) {	// 2바이트의 경우
+						fprintf(fptr_list, "%04X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 2바이트 출력
+					}
+					else {
+						// 그외의 경우
+						fprintf(fptr_list, "%06X\n", IMRArray[csect_loop][loop]->ObjectCode);	// 그외의 경우 object code 생략
+					}
 				}
 			}
 		}
+		printf("\n");
+		fprintf(fptr_list, "\n");
 	}
 	fclose(fptr_list);	// 리스트 파일 출력이 종료되어서 파일 저장
 }
@@ -659,7 +678,7 @@ void CreateObjectCode() {	// 목적파일 생성
 	int first_index;
 	int last_index;
 	int x, xx;
-	int loop, len = 0;
+	int loop, csect_loop, len = 0;
 
 	char temp_operator[12][10];
 	char temp_operand[12][10];
@@ -674,195 +693,212 @@ void CreateObjectCode() {	// 목적파일 생성
 
 	printf("Creating Object Code...\n\n");
 
-	loop = 0;	// 반복을 위한 인덱스 변수
-	if (!strcmp(IMRArray[loop]->OperatorField, "START"))	// 중간파일의 첫번째 원소가 START일 때
-	{
-		// 헤더 레코드 작성 (프로그램 이름, 시작주소, 프로그램 길이)
-		// 콘솔창과 파일 둘다 출력
-		printf("H%-6s%06X%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
-		fprintf(fptr_obj, "H^%-6s^%06X^%06X\n", IMRArray[loop]->LabelField, start_address, program_length);
-		loop++;
-	}
-
-	if (ExtDefCounter > 0) {
-		// 출력할 정의 레코드가 있을 경우 정의 레코드 출력
-		printf("D");
-		fprintf(fptr_obj, "D");
-		for (x = 0; x < ExtDefCounter; x++) {
-			// 정의 레코드 작성 (레이블 이름, 주소)
+	for (csect_loop = 0; csect_loop <= CSectCounter; csect_loop++) {
+		loop = 0;	// 반복을 위한 인덱스 변수
+		if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "START") || !strcmp(IMRArray[csect_loop][loop]->OperatorField, "CSECT"))
+			// 중간파일의 첫번째 원소가 CSECT 혹은 START일 때
+		{
+			// 헤더 레코드 작성 (프로그램 이름, 시작주소, 프로그램 길이)
 			// 콘솔창과 파일 둘다 출력
-			printf("%-6s%06X", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
-			fprintf(fptr_obj, "^%-6s^%06X", ExtDefTAB[x].Label, ExtDefTAB[x].Address);
+			printf("H%-6s%06X%06X\n", IMRArray[csect_loop][loop]->LabelField, start_address[csect_loop], program_length[csect_loop]);
+			fprintf(fptr_obj, "H^%-6s^%06X^%06X\n", IMRArray[csect_loop][loop]->LabelField, start_address[csect_loop], program_length[csect_loop]);
+			loop++;
 		}
-		printf("\n");
-		fprintf(fptr_obj, "\n");
-	}
 
-	if (ExtRefCounter > 0) {
-		// 출력할 참조 레코드가 있을 경우 정의 레코드 출력
-		printf("R");
-		fprintf(fptr_obj, "R");
-		for (x = 0; x < ExtRefCounter; x++) {
-			// 참조 레코드 작성 (외부 참조 레이블 이름)
-			// 콘솔창과 파일 둘다 출력
-			printf("%-6s", ExtRefTAB[x].Label);
-			fprintf(fptr_obj, "^%-6s", ExtRefTAB[x].Label);
-		}
-		printf("\n");
-		fprintf(fptr_obj, "\n");
-	}
-
-	while (1)	// 무한루프 시작
-	{
-		first_address = IMRArray[loop]->Loc;	// 한줄의 시작주소를 저장
-		last_address = IMRArray[loop]->Loc + 29;	// 1D개의 바이트를 출력할 수 있으므로 최대 29 바이트 출력하는 한계 설정
-		first_index = loop;	// 반복문을 돌기위한 첫번째 인덱스값을 초기화
-
-		// 출력할 수 있는 길이 계산
-		for (x = 0, temp_address = first_address; temp_address <= last_address; loop++) {
-			// END 어셈블러 지시자가 나오거나 한줄에 출력할 수 있는 양의 한계에 도달했을 때 for문 종료
-			// x : 한 줄안에 출력할 수 있는 목적코드 최대 개수
-
-			if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만나면 for문 탈출
-				break;
-			else if (strcmp(IMRArray[loop]->OperatorField, "RESB")
-				&& strcmp(IMRArray[loop]->OperatorField, "RESW")
-				&& strcmp(IMRArray[loop]->OperatorField, "BASE")
-				&& strcmp(IMRArray[loop]->OperatorField, "NOBASE")
-				&& strcmp(IMRArray[loop]->OperatorField, "EXTREF")
-				&& strcmp(IMRArray[loop]->OperatorField, "EXTDEF")) {
-				// 목적코드가 없는 어셈블러 지시자를 제외한 나머지들을 출력하기 위해 저장
-				// temp_objectcode : 목적코드를 저장
-				// temp_operator : Operator Mnemonic 저장
-				// temp_operand : Operand Mnemonic 저장
-				temp_objectcode[x] = IMRArray[loop]->ObjectCode;
-				strcpy(temp_operator[x], IMRArray[loop]->OperatorField);
-				strcpy(temp_operand[x], IMRArray[loop]->OperandField);
-				last_index = loop + 1;	// 한줄에 표현할 수 있는 목적코드의 길이를 계산하기 위해 저장
-				x++; // 명령어 갯수 1 증가
+		if (ExtDefCounter[csect_loop] > 0) {
+			// 출력할 정의 레코드가 있을 경우 정의 레코드 출력
+			printf("D");
+			fprintf(fptr_obj, "D");
+			for (x = 0; x < ExtDefCounter[csect_loop]; x++) {
+				// 정의 레코드 작성 (레이블 이름, 주소)
+				// 콘솔창과 파일 둘다 출력
+				printf("%-6s%06X", ExtDefTAB[csect_loop][x].Label, ExtDefTAB[csect_loop][x].Address);
+				fprintf(fptr_obj, "^%-6s^%06X", ExtDefTAB[csect_loop][x].Label, ExtDefTAB[csect_loop][x].Address);
 			}
-			// 다음번 명령어의 시작점이 한계점인지 검사하기 위한 저장
-			temp_address = IMRArray[loop + 1]->Loc;
-			// 다음번 명령어가 출력되어도 출력할 수 있는 양의 한계를 넘지 않는 지 검사 (형식이 다를 수 있기 때문)
-			if (SearchOptab(IMRArray[loop + 1]->OperatorField)) {
-				if (ReadFlag(IMRArray[loop + 1]->OperatorField)) {	// 4형식 명령어일 경우
-					temp_address += 1;	// 1바이트 추가
+			printf("\n");
+			fprintf(fptr_obj, "\n");
+		}
+
+		if (ExtRefCounter[csect_loop] > 0) {
+			// 출력할 참조 레코드가 있을 경우 정의 레코드 출력
+			printf("R");
+			fprintf(fptr_obj, "R");
+			for (x = 0; x < ExtRefCounter[csect_loop]; x++) {
+				// 참조 레코드 작성 (외부 참조 레이블 이름)
+				// 콘솔창과 파일 둘다 출력
+				printf("%-6s", ExtRefTAB[csect_loop][x].Label);
+				fprintf(fptr_obj, "^%-6s", ExtRefTAB[csect_loop][x].Label);
+			}
+			printf("\n");
+			fprintf(fptr_obj, "\n");
+		}
+
+		while (1)	// 무한루프 시작
+		{
+			first_address = IMRArray[csect_loop][loop]->Loc;	// 한줄의 시작주소를 저장
+			last_address = IMRArray[csect_loop][loop]->Loc + 29;	// 1D개의 바이트를 출력할 수 있으므로 최대 29 바이트 출력하는 한계 설정
+			first_index = loop;	// 반복문을 돌기위한 첫번째 인덱스값을 초기화
+
+			// 출력할 수 있는 길이 계산
+			for (x = 0, temp_address = first_address; temp_address <= last_address; loop++) {
+				// END 어셈블러 지시자가 나오거나 한줄에 출력할 수 있는 양의 한계에 도달했을 때 for문 종료
+				// x : 한 줄안에 출력할 수 있는 목적코드 최대 개수
+
+				if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "END")) {// END 어셈블러 지시자를 만나면 for문 탈출
+					
+					break;
+				} else if (strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESB")
+					&& strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESW")
+					&& strcmp(IMRArray[csect_loop][loop]->OperatorField, "BASE")
+					&& strcmp(IMRArray[csect_loop][loop]->OperatorField, "NOBASE")
+					&& strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTREF")
+					&& strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTDEF")) {
+					// 목적코드가 없는 어셈블러 지시자를 제외한 나머지들을 출력하기 위해 저장
+					// temp_objectcode : 목적코드를 저장
+					// temp_operator : Operator Mnemonic 저장
+					// temp_operand : Operand Mnemonic 저장
+					temp_objectcode[x] = IMRArray[csect_loop][loop]->ObjectCode;
+					strcpy(temp_operator[x], IMRArray[csect_loop][loop]->OperatorField);
+					strcpy(temp_operand[x], IMRArray[csect_loop][loop]->OperandField);
+					last_index = loop + 1;	// 한줄에 표현할 수 있는 목적코드의 길이를 계산하기 위해 저장
+					x++; // 명령어 갯수 1 증가
 				}
-				temp_address += OPTAB[Counter].Format - '0';	// 각각 명령어 형식만큼 추가
-			} else {
-				if (!strcmp(IMRArray[loop + 1]->OperatorField, "WORD")
-					|| !strcmp(IMRArray[loop + 1]->OperatorField, "BYTE")) {
-					if (isFloatNum(IMRArray[loop + 1]->OperandField)) {
-						// 부동소수점일 경우 6바이트 추가
-						temp_address += 6;
-					} else if (!strcmp(IMRArray[loop + 1]->OperatorField, "BYTE")) {
-						// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
-						temp_address += ComputeLen(IMRArray[loop + 1]->OperandField);
-					} else if (!strcmp(IMRArray[loop + 1]->OperatorField, "WORD")) {
-						temp_address += 3;
+				// 다음번 명령어의 시작점이 한계점인지 검사하기 위한 저장
+				temp_address = IMRArray[csect_loop][loop + 1]->Loc;
+				// 다음번 명령어가 출력되어도 출력할 수 있는 양의 한계를 넘지 않는 지 검사 (형식이 다를 수 있기 때문)
+				if (SearchOptab(IMRArray[csect_loop][loop + 1]->OperatorField)) {
+					if (ReadFlag(IMRArray[csect_loop][loop + 1]->OperatorField)) {	// 4형식 명령어일 경우
+						temp_address += 1;	// 1바이트 추가
+					}
+					temp_address += OPTAB[Counter].Format - '0';	// 각각 명령어 형식만큼 추가
+				}
+				else {
+					if (!strcmp(IMRArray[csect_loop][loop + 1]->OperatorField, "WORD")
+						|| !strcmp(IMRArray[csect_loop][loop + 1]->OperatorField, "BYTE")) {
+						if (isFloatNum(IMRArray[csect_loop][loop + 1]->OperandField)) {
+							// 부동소수점일 경우 6바이트 추가
+							temp_address += 6;
+						}
+						else if (!strcmp(IMRArray[csect_loop][loop + 1]->OperatorField, "BYTE")) {
+							// C'XX' 혹은 X'XX' 일 경우 출력되어도 가능한 지 검사하기 위함
+							temp_address += ComputeLen(IMRArray[csect_loop][loop + 1]->OperandField);
+						}
+						else if (!strcmp(IMRArray[csect_loop][loop + 1]->OperatorField, "WORD")) {
+							temp_address += 3;
+						}
 					}
 				}
 			}
-		}
 
-		// 텍스트 레코드로 한줄의 시작주소와 목적코드의 길이 계산해서 출력
-		// 콘솔창과 파일에 모두 출력
-		if ((IMRArray[last_index]->Loc - IMRArray[first_index]->Loc) == 0) {
-			if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
-				break;
-			else
-				continue;
-		}
-		printf("T%06X%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
-		fprintf(fptr_obj, "T^%06X^%02X", first_address, (IMRArray[last_index]->Loc - IMRArray[first_index]->Loc));
-
-		for (xx = 0; xx<x; xx++) {
-			// 한줄에 들어갈 수 있는 최대의 목적코드를 출력하기 위한 반복문
+			// 텍스트 레코드로 한줄의 시작주소와 목적코드의 길이 계산해서 출력
 			// 콘솔창과 파일에 모두 출력
-			if ((strcmp(temp_operator[xx], "BYTE") == 0)) {
-				if (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x') {
-					// 16진수로 표현한 1바이트의 값일 경우 1바이트의 형식에 맞춰 출력
-					printf("%02X", temp_objectcode[xx]);
-					fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
-				} else if (isFloatNum(temp_operand[xx])) {
-					// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
-					printf("%012llX", temp_objectcode[xx]);
-					fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
-				} else {
-					printf("%06X", temp_objectcode[xx]);
-					fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
-				}
+			if ((IMRArray[csect_loop][last_index]->Loc - IMRArray[csect_loop][first_index]->Loc) == 0) {
+				if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
+					break;
+				else
+					continue;
 			}
-			else {
-				// 명령어의 형식에 따라 달라지는 길이에 맞춰서 출력
-				if (SearchOptab(temp_operator[xx])) {
-					// operator가 OPTAB에 존재할 경우
-					if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
-						if (ReadFlag(temp_operator[xx])) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
-							// 4형식일 때 4바이트에 출력
-							printf("%08X", temp_objectcode[xx]);
-							fprintf(fptr_obj, "^%08X", temp_objectcode[xx]);
-						}
-						else {
-							// 3형식일 때 3바이트에 출력
-							printf("%06X", temp_objectcode[xx]);
-							fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
-						}
-					}
-					else if (OPTAB[Counter].Format == '2') {
-						// 2형식 명령어의 경우 2바이트에 출력
-						printf("%04X", temp_objectcode[xx]);
-						fprintf(fptr_obj, "^%04X", temp_objectcode[xx]);
-					}
-					else if (OPTAB[Counter].Format == '1') {
-						// 1형식 명령어의 경우 1바이트에 출력
+			printf("T%06X%02X", first_address, (IMRArray[csect_loop][last_index]->Loc - IMRArray[csect_loop][first_index]->Loc));
+			fprintf(fptr_obj, "T^%06X^%02X", first_address, (IMRArray[csect_loop][last_index]->Loc - IMRArray[csect_loop][first_index]->Loc));
+
+			for (xx = 0; xx < x; xx++) {
+				// 한줄에 들어갈 수 있는 최대의 목적코드를 출력하기 위한 반복문
+				// 콘솔창과 파일에 모두 출력
+				if ((strcmp(temp_operator[xx], "BYTE") == 0)) {
+					if (temp_operand[xx][0] == 'X' || temp_operand[xx][0] == 'x') {
+						// 16진수로 표현한 1바이트의 값일 경우 1바이트의 형식에 맞춰 출력
 						printf("%02X", temp_objectcode[xx]);
 						fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
 					}
-				} else {
-					if (isFloatNum(temp_operand[xx])) {
+					else if (isFloatNum(temp_operand[xx])) {
 						// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
 						printf("%012llX", temp_objectcode[xx]);
 						fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
-					} else {
-						// WORD일 경우
+					}
+					else {
 						printf("%06X", temp_objectcode[xx]);
 						fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
 					}
 				}
+				else {
+					// 명령어의 형식에 따라 달라지는 길이에 맞춰서 출력
+					if (SearchOptab(temp_operator[xx])) {
+						// operator가 OPTAB에 존재할 경우
+						if (OPTAB[Counter].Format == '3') {	// 해당 명령어가 3/4형식 명령어일 경우
+							if (ReadFlag(temp_operator[xx])) {	// 명령어에 '+'가 붙은 경우 (4형식 명령어인지 판단하기 위함)
+								// 4형식일 때 4바이트에 출력
+								printf("%08X", temp_objectcode[xx]);
+								fprintf(fptr_obj, "^%08X", temp_objectcode[xx]);
+							}
+							else {
+								// 3형식일 때 3바이트에 출력
+								printf("%06X", temp_objectcode[xx]);
+								fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+							}
+						}
+						else if (OPTAB[Counter].Format == '2') {
+							// 2형식 명령어의 경우 2바이트에 출력
+							printf("%04X", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%04X", temp_objectcode[xx]);
+						}
+						else if (OPTAB[Counter].Format == '1') {
+							// 1형식 명령어의 경우 1바이트에 출력
+							printf("%02X", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%02X", temp_objectcode[xx]);
+						}
+					}
+					else {
+						if (isFloatNum(temp_operand[xx])) {
+							// 부동소수점일 경우 6바이트의 형식에 맞춰 출력
+							printf("%012llX", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%012llX", temp_objectcode[xx]);
+						}
+						else {
+							// WORD일 경우
+							printf("%06X", temp_objectcode[xx]);
+							fprintf(fptr_obj, "^%06X", temp_objectcode[xx]);
+						}
+					}
+				}
 			}
+
+			// 한줄 출력이 끝난 후 개행
+			// 콘솔창과 파일에 모두 출력
+			printf("\n");
+			fprintf(fptr_obj, "\n");
+
+			if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
+				break;
 		}
 
-		// 한줄 출력이 끝난 후 개행
+		// 수정레코드 출력부분
+		// RLD 부분
+		for (loop = 0; loop < RLDCounter[csect_loop]; loop++) {
+			// RLD의 모든 레코드들을 수정레코드로 출력
+			// 재배치가 필요함을 로더에게 알리기위함
+			printf("M%06X%02X\n", RLDArray[csect_loop][loop].Address, RLDArray[csect_loop][loop].Nibbles);
+			fprintf(fptr_obj, "M^%06X^%02X\n", RLDArray[csect_loop][loop].Address, RLDArray[csect_loop][loop].Nibbles);
+		}
+		// ESD 부분
+		for (loop = 0; loop < ESDCounter[csect_loop]; loop++) {
+			// ESD의 모든 레코드들을 수정레코드로 출력
+			// 링킹과 재배치가 필요함을 로더에게 알리기 위함
+			printf("M%06X%02X%c%s\n", ESDArray[csect_loop][loop].Address, ESDArray[csect_loop][loop].Nibbles, ESDArray[csect_loop][loop].sign, ESDArray[csect_loop][loop].Label);
+			fprintf(fptr_obj, "M^%06X^%02X^%c%s\n", ESDArray[csect_loop][loop].Address, ESDArray[csect_loop][loop].Nibbles, ESDArray[csect_loop][loop].sign, ESDArray[csect_loop][loop].Label);
+		}
+
+		// 엔드 레코드를 통해 프로그램의 시작주소를 출력
 		// 콘솔창과 파일에 모두 출력
-		printf("\n");
-		fprintf(fptr_obj, "\n");
-
-		if (!strcmp(IMRArray[loop]->OperatorField, "END"))	// END 어셈블러 지시자를 만났을 경우 while문 탈출
-			break;
+		printf("E");
+		fprintf(fptr_obj, "E");
+		if (SearchSymtab(End_operand, csect_loop)) {
+			printf("%06X\n\n", start_address[csect_loop]);
+			fprintf(fptr_obj, "^%06X\n\n", start_address[csect_loop]);
+		} else {
+			printf("\n\n");
+			fprintf(fptr_obj, "\n\n");
+		}
 	}
-
-	// 수정레코드 출력부분
-	// RLD 부분
-	for (loop = 0; loop < RLDCounter; loop++) {
-		// RLD의 모든 레코드들을 수정레코드로 출력
-		// 재배치가 필요함을 로더에게 알리기위함
-		printf("M%06X%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
-		fprintf(fptr_obj, "M^%06X^%02X\n", RLDArray[loop].Address, RLDArray[loop].Nibbles);
-	}
-	// ESD 부분
-	for (loop = 0; loop < ESDCounter; loop++) {
-		// ESD의 모든 레코드들을 수정레코드로 출력
-		// 링킹과 재배치가 필요함을 로더에게 알리기 위함
-		printf("M%06X%02X%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
-		fprintf(fptr_obj, "M^%06X^%02X^%c%s\n", ESDArray[loop].Address, ESDArray[loop].Nibbles, ESDArray[loop].sign, ESDArray[loop].Label);
-	}
-
-	// 엔드 레코드를 통해 프로그램의 시작주소를 출력
-	// 콘솔창과 파일에 모두 출력
-	printf("E%06X\n\n", start_address);
-	fprintf(fptr_obj, "E^%06X\n\n", start_address);
-
 	fclose(fptr_obj);	// obj 파일 쓰기 종료
 }
 
@@ -879,7 +915,7 @@ void main(void)
 
 	int loc = 0;
 	int line = 0;
-	int loop;
+	int loop, csect_loop;
 	int is_empty_line;
 	int is_comment;
 	int loader_flag = 0;
@@ -901,13 +937,7 @@ void main(void)
 
 
 	printf("\nEnter the file name you want to assembly (sic.asm):");
-	
-	/******************************TEST INPUT********************************************/
-	printf("%s\n", TEST_FNAME);
-	//scanf("%s", filename);
-	strcpy(filename, TEST_FNAME);
-	/******************************TEST INPUT********************************************/
-	
+	scanf("%s", filename);
 	fptr = fopen(filename, "r");
 	if (fptr == NULL)	// 소스코드 파일 읽기 실패했을 경우 예외처리
 	{
@@ -935,38 +965,38 @@ void main(void)
 			Index = 0;
 			j = 0;
 
-			IMRArray[ArrayIndex] = (IntermediateRec*)malloc(sizeof(IntermediateRec));/* [A] */	// 중간파일 동적할당
-			IMRArray[ArrayIndex]->LineIndex = ArrayIndex;	// 소스코드 상의 행 삽입
+			IMRArray[CSectCounter][ArrayIndex[CSectCounter]] = (IntermediateRec*)malloc(sizeof(IntermediateRec));/* [A] */	// 중간파일 동적할당
+			IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LineIndex = ArrayIndex;	// 소스코드 상의 행 삽입
 			strcpy(label, ReadLabel());	// 레이블을 읽어 Label에 저장
-			strcpy(IMRArray[ArrayIndex]->LabelField, label);	// 레이블을 중간파일에 저장
+			strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LabelField, label);	// 레이블을 중간파일에 저장
 			SkipSpace();	// 공백 제거
 
 			if (line == start_line)	// 프로그램의 시작 지점이 첫줄이 아닐 경우 (첫번째 줄이 주석일 경우) 예외처리
 			{
 				strcpy(opcode, ReadOprator());	// Mnemonic 읽기
-				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode); /* [A] */	// 읽은 Mnemonic을 중간파일에 저장
+				strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperatorField, opcode); /* [A] */	// 읽은 Mnemonic을 중간파일에 저장
 				if (!strcmp(opcode, "START")) {	// 시작주소 초기화
 					SkipSpace();
 					strcpy(operand, ReadOperand());
-					strcpy(IMRArray[ArrayIndex]->OperandField, operand);/* [A] */
+					strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperandField, operand);/* [A] */
 					LOCCTR[LocctrCounter] = StrToHex(operand);
-					start_address = LOCCTR[LocctrCounter];
+					start_address[CSectCounter] = LOCCTR[LocctrCounter];
 				} else {	// 시작 주소가 명시되어있지 않을 경우 0으로 초기화
 					LOCCTR[LocctrCounter] = 0;
-					start_address = LOCCTR[LocctrCounter];
+					start_address[CSectCounter] = LOCCTR[LocctrCounter];
 				}
 			} else {
 				strcpy(opcode, ReadOprator());	// OP Code 읽기
-				strcpy(IMRArray[ArrayIndex]->OperatorField, opcode);	// 중간파일에 OP code 복사
+				strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperatorField, opcode);	// 중간파일에 OP code 복사
 				SkipSpace();	// OP code와 피연산자 사이의 공백 제거
 				strcpy(operand, ReadOperand());	// 피연산자 부분 읽기
-				strcpy(IMRArray[ArrayIndex]->OperandField, operand);	// 중간파일에 피연산자 복사
+				strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperandField, operand);	// 중간파일에 피연산자 복사
 
-				if (strcmp(opcode, "END"))	// OP code가 END 어셈블러 지시자일 경우
+				if (strcmp(opcode, "END"))	// OP code가 END 어셈블러 지시자가 아닐 경우
 				{
 					if (label[0] != '\0')	// 레이블이 있을 경우
 					{
-						if (SearchSymtab(label))	// 같은 이름의 레이블이 있는지 찾음
+						if (SearchSymtab(label, CSectCounter))	// 같은 이름의 레이블이 있는지 찾음
 						{
 							// 만약 같은 이름의 레이블이 있을 경우 Alert하고 프로그램 종료
 							fclose(fptr);
@@ -974,7 +1004,9 @@ void main(void)
 							FoundOnSymtab_flag = 0;
 							exit(1);
 						}
-						RecordSymtab(label);	// 같은이름이 없으므로 심볼테이블에 추가
+						if (strcmp(opcode, "CSECT")) {	// CSECT가 아닐 경우에만 심볼테이블에 추가
+							RecordSymtab(label);	// 같은이름이 없으므로 심볼테이블에 추가
+						}
 					}
 
 					if (SearchOptab(opcode)) {	// OP Code가 OPTAB에 있을 경우 명령어 형식만큼 메모리 확보
@@ -1032,17 +1064,57 @@ void main(void)
 						}
 						LOCCTR[LocctrCounter] = loc;
 					}
+					else if (!strcmp(opcode, "CSECT")) {
+						// 기존에 작성된 심볼테이블을 기반으로 외부 정의 레이블의 위치들 기록
+						if (RecordEXTDEFLoc()) {
+							printf("ERROR: Isn't exist External Define Label\n");	// EXTDEF 중에 심볼테이블에서 찾을 수 없는 레이블이 있을 경우 예외처리
+							fclose(fptr);
+							exit(1);
+						}
+						
+						// 각각 END 어셈블러 지시자 추가
+						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LabelField[0] = '\0';
+						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->Loc = LOCCTR[LocctrCounter - 1];
+						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperatorField, "END");
+						program_length[CSectCounter] = LOCCTR[LocctrCounter - 1] - LOCCTR[0];
+						ArrayIndex[CSectCounter]++;
+						
+						// 새로운 프로그램을 읽기 위한 변수 초기화
+						CSectCounter++;
+						line = 1;
+						loc = 0;
+						LocctrCounter = 0;
+						LOCCTR[LocctrCounter] = 0;
+						FoundOnOptab_flag = 0;	// flag 변수 초기화
+						
+						// 새로운 중간파일 생성 및 초기화
+						IMRArray[CSectCounter][ArrayIndex[CSectCounter]] = (IntermediateRec *)malloc(sizeof(IntermediateRec));
+						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LabelField, label);
+						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperandField, "");
+						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperatorField, opcode);
+						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LineIndex = 0;
+						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->Loc = 0;
+						RecordSymtab(label);	// 같은이름이 없으므로 심볼테이블에 추가
+						start_address[CSectCounter] = LOCCTR[LocctrCounter];
+						LocctrCounter++;
+						ArrayIndex[CSectCounter]++;
+						continue;
+					}
 					else { // 정의되지 않은 OP code이므로 경고후 프로그램 종료
 						fclose(fptr);
-						printf("ERROR: Invalid Operation Code\n");
+						printf("ERROR: Invalid Operation Code[%s]\n", opcode);
 						exit(1);
 					}
 				}
+				else {
+					// END Assembler Directive를 만났을 경우 피연산자 저장
+					strcpy(End_operand, operand);
+				}
 			}
 			loc = LOCCTR[LocctrCounter];	// loc을 다시 설정하고 다음 루프를 준비
-			IMRArray[ArrayIndex]->Loc = LOCCTR[LocctrCounter - 1];	// 중간파일에 해당 코드의 메모리 번지 기록
+			IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->Loc = LOCCTR[LocctrCounter - 1];	// 중간파일에 해당 코드의 메모리 번지 기록
 			LocctrCounter++;	// LOCCTR를 접근하는 인덱스 변수 값 증가
-			ArrayIndex++;	// 다음 코드를 읽기 위한 중간파일의 인덱스 변수 값 증가
+			ArrayIndex[CSectCounter]++;	// 다음 코드를 읽기 위한 중간파일의 인덱스 변수 값 증가
 		}
 		
 		if (is_comment == 1) {	// 첫 줄이 주석일 경우 시작이 되지 않는 오류 수정
@@ -1052,7 +1124,7 @@ void main(void)
 		FoundOnOptab_flag = 0;	// flag 변수 초기화
 		line += 1;	// 소스 행 1 증가
 	}
-	program_length = LOCCTR[LocctrCounter - 2] - LOCCTR[0];
+	program_length[CSectCounter] = LOCCTR[LocctrCounter - 2] - LOCCTR[0];
 	// END 지시자를 만났을 경우 END 지시자 바로 이전 소스코드의 메모리 위치와 시작주소를 빼서 총 프로그램 길이 계산
 
 	if (RecordEXTDEFLoc()) {
@@ -1081,219 +1153,228 @@ void main(void)
 	int diff = 0;	// 주소에 들어갈 변위를 저장하는 변수 (음수가 나올 수 있으므로 unsigned 가 아니다)
 	int base_register = -1;	// BASE 어셈블러 지시자가 나오지 않을 경우 base relative addressing mode를 사용하지 못하게 하도록 하기 위한 기본값 -1
 
-	for (loop = 1; loop<ArrayIndex; loop++) {	// 중간파일을 순차적으로 읽음
-		// 각 변수들 초기화
-		inst_fmt_opcode = 0;
-		inst_fmt_sign = 0;
-		inst_fmt_relative = 0;
-		inst_fmt_index = 0;
-		inst_fmt_extended = 0;
-		inst_fmt_address = 0;
-		inst_fmt_byte = 0;
-		regName[0] = '\0';
-		tempLabel[0] = '\0';
+	for (csect_loop = 0; csect_loop <= CSectCounter; csect_loop++) {
+		base_register = -1;
+		diff = 0;
+		for (loop = 1; loop < ArrayIndex[csect_loop]; loop++) {	// 중간파일을 순차적으로 읽음
+			// 각 변수들 초기화
+			inst_fmt_opcode = 0;
+			inst_fmt_sign = 0;
+			inst_fmt_relative = 0;
+			inst_fmt_index = 0;
+			inst_fmt_extended = 0;
+			inst_fmt_address = 0;
+			inst_fmt_byte = 0;
+			regName[0] = '\0';
+			tempLabel[0] = '\0';
 
-		strcpy(opcode, IMRArray[loop]->OperatorField);	// op code 부분 복사
+			strcpy(opcode, IMRArray[csect_loop][loop]->OperatorField);	// op code 부분 복사
 
-		if (SearchOptab(opcode)) {	// opcode 찾기
-			if (!strcmp(OPTAB[Counter].Mnemonic, "RSUB")) {
-				// RSUB는 3형식 명령어이지만 상관이 없으므로
-				IMRArray[loop]->ObjectCode = (OPTAB[Counter].ManchineCode << 16);
-				continue;
-			}
-			inst_fmt_opcode = OPTAB[Counter].ManchineCode;	// opcode의 목적코드 복사
-			inst_fmt_byte = OPTAB[Counter].Format - '0';	// 해당 명령어가 몇 바이트를 사용하는 지 저장
-			if (inst_fmt_byte == 3 && ReadFlag(opcode)) {	// 만약 4형식 명령어일 경우 분기처리
-				inst_fmt_byte = 4;	// 4형식 명령어
-				inst_fmt_extended = 0x00100000;	// 플래그 비트 e가 1임.
-			}
-			inst_fmt_opcode <<= (8 * (inst_fmt_byte - 1));	// 각 명령어 형식에 맞게 왼쪽으로 Shift
-			IMRArray[loop]->ObjectCode = inst_fmt_opcode;
-			strcpy(operand, IMRArray[loop]->OperandField);
-			
-			if (ReadFlag(operand)) {
-				if (inst_fmt_byte <= 2) {
-					fclose(fptr);
-					printf("ERROR: Invalid Addressing Mode\n");
-					exit(1);
+			if (SearchOptab(opcode)) {	// opcode 찾기
+				if (!strcmp(OPTAB[Counter].Mnemonic, "RSUB")) {
+					// RSUB는 3형식 명령어이지만 상관이 없으므로
+					IMRArray[csect_loop][loop]->ObjectCode = (OPTAB[Counter].ManchineCode << 16);
+					continue;
 				}
-				if (Flag == SHARP) {	// Immediate Addressing Mode
-					inst_fmt_sign = 0x010000;
+				inst_fmt_opcode = OPTAB[Counter].ManchineCode;	// opcode의 목적코드 복사
+				inst_fmt_byte = OPTAB[Counter].Format - '0';	// 해당 명령어가 몇 바이트를 사용하는 지 저장
+				if (inst_fmt_byte == 3 && ReadFlag(opcode)) {	// 만약 4형식 명령어일 경우 분기처리
+					inst_fmt_byte = 4;	// 4형식 명령어
+					inst_fmt_extended = 0x00100000;	// 플래그 비트 e가 1임.
 				}
-				else if (Flag == AT) {	// Indirect Addressing Mode
-					inst_fmt_sign = 0x020000;
-				}
-				inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
-			}
-			else if (inst_fmt_byte >= 3) {	// 3/4형식 명령어 Simple Addressing Mode
-				inst_fmt_sign = 0x030000;
-				inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
-			}
-			
-			if (inst_fmt_byte >= 3) {
-				// 3/4형식 명령어 일경우
-				if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {	// index addressing Mode
-					inst_fmt_index = 0x008000;	// index addressing mode 플래그 비트 x에 1
-					inst_fmt_index <<= 8 * (inst_fmt_byte - 3);	// 4형식 명령어의 경우 8비트씩 왼쪽으로 이동
-					operand[strlen(operand) - 2] = '\0';	// ,X 부분 삭제
-				}
+				inst_fmt_opcode <<= (8 * (inst_fmt_byte - 1));	// 각 명령어 형식에 맞게 왼쪽으로 Shift
+				IMRArray[csect_loop][loop]->ObjectCode = inst_fmt_opcode;
+				strcpy(operand, IMRArray[csect_loop][loop]->OperandField);
 
-				if (SearchSymtab(operand)) {
-					// 심볼테이블에서 해당 피연산자를 찾을 수 있을 경우
-					if (inst_fmt_byte == 4) {	// extended instruction의 주소 지정
-						inst_fmt_address = SYMTAB[SymIdx].Address;
-						RecordRLD(IMRArray[loop]->OperatorField, IMRArray[loop]->Loc);	// 재배치가 필요하므로 RLD에 추가
-					}
-					else {	// relative Addressing mode
-						// PC의 값 저장
-						// 명령어 실행 시점에서 PC의 값 계산 (다음 명령어의 메모리 위치)
-						diff = SYMTAB[SymIdx].Address - IMRArray[loop]->Loc - inst_fmt_byte;
-						if (diff >= -2048 && diff < 2048) {
-							// pc relative일 경우
-							// 음수면 12비트로 표현해야하므로 12비트의 음수로 변환해주기 위한 함수 호출
-							// 음수가 아니라면 함수 로직 내에서 그대로 반환되므로 음수가 아니어도 함수는 호출
-							inst_fmt_address = 0x002000;
-							inst_fmt_address += ConvertNumber(diff, 3);
-						}
-						else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
-							// base relative addressing mode에 기반하여 변위 다시 계산
-							diff = SYMTAB[SymIdx].Address - base_register;
-							if (base_register != -1 && diff >= 0 && diff < 4096) {	// Base relative addressing mode가 가능할경우
-								// base relative addressing mode로 어셈블
-								inst_fmt_address = 0x004000;
-								inst_fmt_address += diff;
-							}
-							else {
-								// pc 혹은 base relative addressing mode로 어셈블 불가할 경우 예외처리
-								fclose(fptr);
-								printf("ERROR: CANNOT present relative addressing mode[line : %d]\n", IMRArray[loop]->LineIndex);
-								exit(1);
-							}
-						}
-					}
-				}
-				else {
-					// 심볼테이블에서 피연산자를 찾을 수 없을 때
-					ReadFlag(operand);	// 피연산자에 붙어있는 플래그가 #인지 검사하기위함 
-					if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
-						inst_fmt_address = ConvertNumber(StrToDec(operand), (inst_fmt_byte == 4) ? 5 : 3);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
-					}
-					else if (SearchExtRefTAB(operand)) {
-						inst_fmt_address = 0;
-						RecordESD(operand, IMRArray[loop]->Loc, inst_fmt_byte);
-					} else {
-						// 외부참조 레이블도 아니고 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
+				if (ReadFlag(operand)) {
+					if (inst_fmt_byte <= 2) {
 						fclose(fptr);
-						printf("ERROR: Label isn't exist [%s]\n", operand);
+						printf("ERROR: Invalid Addressing Mode\n");
 						exit(1);
 					}
+					if (Flag == SHARP) {	// Immediate Addressing Mode
+						inst_fmt_sign = 0x010000;
+					}
+					else if (Flag == AT) {	// Indirect Addressing Mode
+						inst_fmt_sign = 0x020000;
+					}
+					inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
 				}
-			}
-			else if (inst_fmt_byte == 2) {	// 2형식 명령어일 경우
-				i = 0; regCharIdx = 0;	// 인덱스 변수들 초기화
-				do {	// 피연산자를 읽어 레지스터들에 맞는 목적코드 작성
-					if (operand[i] == ',' || operand[i] == '\0') {	// 앞서 나온 레지스터를 읽을 준비가 되었을 경우
-						regName[regCharIdx] = '\0';	// 단순 문자배열을 문자열로 끊고
-						if (operand[i] == ',') {	// 기존에 기록된 레지스터의 아이디가 존재할경우 4비트를 왼쪽으로 밀고 기록
-							inst_fmt_address <<= 4;
-						}
+				else if (inst_fmt_byte >= 3) {	// 3/4형식 명령어 Simple Addressing Mode
+					inst_fmt_sign = 0x030000;
+					inst_fmt_sign <<= 8 * (inst_fmt_byte - 3);	// 바이트 수 만큼 왼쪽으로 Shift
+				}
 
-						if (SearchRegTab(regName)) {	// 미리 정의된 레지스터 테이블에서 읽음
-							inst_fmt_address += REG_TAB[RegIdx].id;	// 레지스터 테이블에 해당 레지스터가 있을 경우 그 아이디를 목적코드에 추가 
+				if (inst_fmt_byte >= 3) {
+					// 3/4형식 명령어 일경우
+					if (operand[strlen(operand) - 2] == ',' && operand[strlen(operand) - 1] == 'X') {	// index addressing Mode
+						inst_fmt_index = 0x008000;	// index addressing mode 플래그 비트 x에 1
+						inst_fmt_index <<= 8 * (inst_fmt_byte - 3);	// 4형식 명령어의 경우 8비트씩 왼쪽으로 이동
+						operand[strlen(operand) - 2] = '\0';	// ,X 부분 삭제
+					}
+
+					if (SearchSymtab(operand, csect_loop)) {
+						// 심볼테이블에서 해당 피연산자를 찾을 수 있을 경우
+						if (inst_fmt_byte == 4) {	// extended instruction의 주소 지정
+							inst_fmt_address = SYMTAB[csect_loop][SymIdx].Address;
+							RecordRLD(IMRArray[csect_loop][loop]->OperatorField, IMRArray[csect_loop][loop]->Loc, csect_loop);	// 재배치가 필요하므로 RLD에 추가
 						}
-						else { 
-							if (!strcmp(OPTAB[Counter].Mnemonic, "SVC") || !strcmp(OPTAB[Counter].Mnemonic, "SHIFTL") || !strcmp(OPTAB[Counter].Mnemonic, "SHIFTR")) {
-								// 피연산자로 레지스터를 사용하지않고 숫자를 사용하는 경우
-								if (isNum(regName)) {	// 피연산자가 숫자라면
-									inst_fmt_address += StrToDec(regName);	// 추가
+						else {	// relative Addressing mode
+							// PC의 값 저장
+							// 명령어 실행 시점에서 PC의 값 계산 (다음 명령어의 메모리 위치)
+							diff = SYMTAB[csect_loop][SymIdx].Address - IMRArray[csect_loop][loop]->Loc - inst_fmt_byte;
+							if (diff >= -2048 && diff < 2048) {
+								// pc relative일 경우
+								// 음수면 12비트로 표현해야하므로 12비트의 음수로 변환해주기 위한 함수 호출
+								// 음수가 아니라면 함수 로직 내에서 그대로 반환되므로 음수가 아니어도 함수는 호출
+								inst_fmt_address = 0x002000;
+								inst_fmt_address += ConvertNumber(diff, 3);
+							}
+							else {	// PC relative addressing mode가 실패했을 경우 Base relative addressing mode 시도
+								// base relative addressing mode에 기반하여 변위 다시 계산
+								diff = SYMTAB[csect_loop][SymIdx].Address - base_register;
+								if (base_register != -1 && diff >= 0 && diff < 4096) {	// Base relative addressing mode가 가능할경우
+									// base relative addressing mode로 어셈블
+									inst_fmt_address = 0x004000;
+									inst_fmt_address += diff;
+								}
+								else {
+									// pc 혹은 base relative addressing mode로 어셈블 불가할 경우 예외처리
+									fclose(fptr);
+									printf("ERROR: CANNOT present relative addressing mode[line : %d]\n", IMRArray[csect_loop][loop]->LineIndex);
+									exit(1);
 								}
 							}
-							else { // RegTab에 없기 때문에 오류로 처리하고 프로그램 종료
-								fclose(fptr);
-								printf("ERROR: Invalid Register\n");
-								exit(1);
-							}
 						}
-						regCharIdx = 0;	// 인덱스 변수 초기화
 					}
-					else if (operand[i] != ' ') {	// 공백일 경우 스킵하도록
-						regName[regCharIdx++] = operand[i];	// 레지스터 이름 저장
-					}
-				} while (operand[i++] != '\0');
-
-				if (!strcmp(OPTAB[Counter].Mnemonic, "CLEAR")
-					|| !strcmp(OPTAB[Counter].Mnemonic, "TIXR")
-					|| !strcmp(OPTAB[Counter].Mnemonic, "SVC")) {
-					// 피연산자 형식이 다른 특정 명령어들에 한해 예외처리
-					// 피연산자가 1개 일경우 기록후 4비트 왼쪽으로 이동
-					inst_fmt_address <<= 4;
-				}
-			}
-
-			// Object Code 병합
-			inst_fmt = inst_fmt_opcode + inst_fmt_sign + inst_fmt_index + inst_fmt_relative + inst_fmt_extended + inst_fmt_address;
-			IMRArray[loop]->ObjectCode = inst_fmt;
-		}
-		else if (!strcmp(opcode, "WORD")) {
-			// 1 WORD의 크기에 10진수 대입
-			strcpy(operand, IMRArray[loop]->OperandField);
-			if (isFloatNum(operand)) {
-				// 부동소수점이므로 부동소수점 계산
-				IMRArray[loop]->ObjectCode = ConvertFloatNum(operand);
-			} else {
-				IMRArray[loop]->ObjectCode = StrToDec(operand);
-			}
-		}
-		else if (!strcmp(opcode, "BYTE")) {
-			// 1 Byte의 값을 여러개 혹은 한개 대입 (ASCII code 혹은 16진수)
-			strcpy(operand, IMRArray[loop]->OperandField);
-			IMRArray[loop]->ObjectCode = 0;
-
-			if (isFloatNum(operand)) {
-				// 부동소수점이므로 부동소수점 계산
-				IMRArray[loop]->ObjectCode = ConvertFloatNum(operand);
-			}
-			else {
-				// 값이 ASCII code일 경우 값 계산후 objectcode에 대입
-				if (operand[0] == 'C' || operand[0] == 'c' && operand[1] == '\'') {
-					for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
-						IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + (int)operand[x];
-						IMRArray[loop]->ObjectCode <<= 8;
+					else {
+						// 심볼테이블에서 피연산자를 찾을 수 없을 때
+						ReadFlag(operand);	// 피연산자에 붙어있는 플래그가 #인지 검사하기위함 
+						if (Flag == SHARP && isNum(operand)) {	// 피연산자가 숫자로 이루어져있고, immediate addressing mode인지 검사
+							inst_fmt_address = ConvertNumber(StrToDec(operand), (inst_fmt_byte == 4) ? 5 : 3);	// 피연산자가 숫자(십진수)로 이루어져 있으므로 그 값을 주소에 대입
+						}
+						else if (SearchExtRefTAB(operand, csect_loop)) {
+							// 외부 참조 레이블일 경우
+							inst_fmt_address = 0;
+							RecordESD(operand, IMRArray[csect_loop][loop]->Loc, inst_fmt_byte, csect_loop);
+						}
+						else {
+							// 외부참조 레이블도 아니고 심볼테이블에서 피연산자를 찾을 수 없고 숫자로 이루어져있지도 않기 때문에
+							fclose(fptr);
+							printf("ERROR: Label isn't exist [%s]\n", operand);
+							exit(1);
+						}
 					}
 				}
+				else if (inst_fmt_byte == 2) {	// 2형식 명령어일 경우
+					i = 0; regCharIdx = 0;	// 인덱스 변수들 초기화
+					do {	// 피연산자를 읽어 레지스터들에 맞는 목적코드 작성
+						if (operand[i] == ',' || operand[i] == '\0') {	// 앞서 나온 레지스터를 읽을 준비가 되었을 경우
+							regName[regCharIdx] = '\0';	// 단순 문자배열을 문자열로 끊고
+							if (operand[i] == ',') {	// 기존에 기록된 레지스터의 아이디가 존재할경우 4비트를 왼쪽으로 밀고 기록
+								inst_fmt_address <<= 4;
+							}
 
-				// 값이 16진수일 경우 값 계산후 objectcode에 대입
-				if (operand[0] == 'X' || operand[0] == 'x' && operand[1] == '\'') {
-					char *operand_ptr;
-					operand_ptr = &operand[2];
-					*(operand_ptr + 2) = '\0';
-					for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
-						IMRArray[loop]->ObjectCode = IMRArray[loop]->ObjectCode + StrToHex(operand_ptr);
-						IMRArray[loop]->ObjectCode <<= 8;
+							if (SearchRegTab(regName)) {	// 미리 정의된 레지스터 테이블에서 읽음
+								inst_fmt_address += REG_TAB[RegIdx].id;	// 레지스터 테이블에 해당 레지스터가 있을 경우 그 아이디를 목적코드에 추가 
+							}
+							else {
+								if (!strcmp(OPTAB[Counter].Mnemonic, "SVC")
+									|| !strcmp(OPTAB[Counter].Mnemonic, "SHIFTL")
+									|| !strcmp(OPTAB[Counter].Mnemonic, "SHIFTR")) {
+									// 피연산자로 레지스터를 사용하지않고 숫자를 사용하는 경우
+									if (isNum(regName)) {	// 피연산자가 숫자라면
+										inst_fmt_address += StrToDec(regName);	// 추가
+									}
+								}
+								else { // RegTab에 없기 때문에 오류로 처리하고 프로그램 종료
+									fclose(fptr);
+									printf("ERROR: Invalid Register\n");
+									exit(1);
+								}
+							}
+							regCharIdx = 0;	// 인덱스 변수 초기화
+						}
+						else if (operand[i] != ' ') {	// 공백일 경우 스킵하도록
+							regName[regCharIdx++] = operand[i];	// 레지스터 이름 저장
+						}
+					} while (operand[i++] != '\0');
+
+					if (!strcmp(OPTAB[Counter].Mnemonic, "CLEAR")
+						|| !strcmp(OPTAB[Counter].Mnemonic, "TIXR")
+						|| !strcmp(OPTAB[Counter].Mnemonic, "SVC")) {
+						// 피연산자 형식이 다른 특정 명령어들에 한해 예외처리
+						// 피연산자가 1개 일경우 기록후 4비트 왼쪽으로 이동
+						inst_fmt_address <<= 4;
 					}
 				}
 
-				IMRArray[loop]->ObjectCode >>= 8;	// 각 반복문 맨마지막에 1바이트 밀었던 것을 다시 원위치로 변경
+				// Object Code 병합
+				inst_fmt = inst_fmt_opcode + inst_fmt_sign + inst_fmt_index + inst_fmt_relative + inst_fmt_extended + inst_fmt_address;
+				IMRArray[csect_loop][loop]->ObjectCode = inst_fmt;
 			}
-		}
-		else if (!strcmp(opcode, "BASE")) {
-			// BASE 어셈블러 지시자일 경우 해당 위치를 base 레지스터에 넣고 base relative addressing mode의 기준점으로 삼음
-			strcpy(operand, IMRArray[loop]->OperandField);
-			IMRArray[loop]->ObjectCode = 0;
-			if (SearchSymtab(operand)) {
-				base_register = SYMTAB[SymIdx].Address;
-			} else {
-				// 피연산자가 SymTab에 없기 때문에 오류로 처리하고 프로그램 종료 
-				fclose(fptr);
-				printf("ERROR: No Label in SYMTAB[%s]\n", operand);
-				exit(1);
+			else if (!strcmp(opcode, "WORD")) {
+				// 1 WORD의 크기에 10진수 대입
+				strcpy(operand, IMRArray[csect_loop][loop]->OperandField);
+				if (isFloatNum(operand)) {
+					// 부동소수점이므로 부동소수점 계산
+					IMRArray[csect_loop][loop]->ObjectCode = ConvertFloatNum(operand);
+				}
+				else {
+					IMRArray[csect_loop][loop]->ObjectCode = StrToDec(operand);
+				}
 			}
-		}
-		else if (!strcmp(opcode, "NOBASE")) {
-			strcpy(operand, IMRArray[loop]->OperandField);
-			IMRArray[loop]->ObjectCode = 0;
-			// base register 해제
-			base_register = -1;
+			else if (!strcmp(opcode, "BYTE")) {
+				// 1 Byte의 값을 여러개 혹은 한개 대입 (ASCII code 혹은 16진수)
+				strcpy(operand, IMRArray[csect_loop][loop]->OperandField);
+				IMRArray[csect_loop][loop]->ObjectCode = 0;
+
+				if (isFloatNum(operand)) {
+					// 부동소수점이므로 부동소수점 계산
+					IMRArray[csect_loop][loop]->ObjectCode = ConvertFloatNum(operand);
+				}
+				else {
+					// 값이 ASCII code일 경우 값 계산후 objectcode에 대입
+					if (operand[0] == 'C' || operand[0] == 'c' && operand[1] == '\'') {
+						for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
+							IMRArray[csect_loop][loop]->ObjectCode += (int)operand[x];
+							IMRArray[csect_loop][loop]->ObjectCode <<= 8;
+						}
+					}
+
+					// 값이 16진수일 경우 값 계산후 objectcode에 대입
+					if (operand[0] == 'X' || operand[0] == 'x' && operand[1] == '\'') {
+						char *operand_ptr;
+						operand_ptr = &operand[2];
+						*(operand_ptr + 2) = '\0';
+						for (int x = 2; x <= (int)(strlen(operand) - 2); x++) {
+							IMRArray[csect_loop][loop]->ObjectCode += StrToHex(operand_ptr);
+							IMRArray[csect_loop][loop]->ObjectCode <<= 8;
+						}
+					}
+
+					IMRArray[csect_loop][loop]->ObjectCode >>= 8;	// 각 반복문 맨마지막에 1바이트 밀었던 것을 다시 원위치로 변경
+				}
+			}
+			else if (!strcmp(opcode, "BASE")) {
+				// BASE 어셈블러 지시자일 경우 해당 위치를 base 레지스터에 넣고 base relative addressing mode의 기준점으로 삼음
+				strcpy(operand, IMRArray[csect_loop][loop]->OperandField);
+				IMRArray[csect_loop][loop]->ObjectCode = 0;
+				if (SearchSymtab(operand, csect_loop)) {
+					base_register = SYMTAB[csect_loop][SymIdx].Address;
+				}
+				else {
+					// 피연산자가 SymTab에 없기 때문에 오류로 처리하고 프로그램 종료 
+					fclose(fptr);
+					printf("ERROR: No Label in SYMTAB[%s]\n", operand);
+					exit(1);
+				}
+			}
+			else if (!strcmp(opcode, "NOBASE")) {
+				IMRArray[csect_loop][loop]->ObjectCode = 0;
+				// base register 해제
+				base_register = -1;
+			}
 		}
 	}
 
@@ -1302,9 +1383,10 @@ void main(void)
 	CreateObjectCode();
 
 	// 메모리 동적할당 해제
-	for (loop = 0; loop<ArrayIndex; loop++)
-		free(IMRArray[loop]);
-
+	for (csect_loop = 0; csect_loop <= CSectCounter; csect_loop++) {
+		for (loop = 0; loop < ArrayIndex[csect_loop]; loop++)
+			free(IMRArray[csect_loop][loop]);
+	}
 	printf("Compeleted Assembly\n");
 	fclose(fptr); // 소스코드 파일 읽기 종료
 
