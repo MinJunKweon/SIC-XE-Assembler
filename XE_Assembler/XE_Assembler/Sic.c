@@ -497,6 +497,10 @@ unsigned long long ConvertFloatNum(char * operand) {
 			// 소수부 계산
 			temp[j] = '\0';
 			frac = StrToFloat(temp);	// 소수부 double형으로 저장
+			if ((dec + frac) == 0) {
+				// 정수부와 소수부 모두 0일 경우 0을 반환
+				return 0;
+			}
 			while (frac == 0 || 36 - dec_size > b) {
 				// 더이상 곱할 소수부가 없을 경우나 표현가능한 비트 수가 넘어갈 경우 반복문 탈출
 				frac *= 2; // 소수를 2 곱함
@@ -521,11 +525,6 @@ unsigned long long ConvertFloatNum(char * operand) {
 	} while (operand[i++] != '\0');
 
 	e += (dec_size > 0) ? (dec_size - 1) : (-k);	// 지수 부분 표현
-
-	if ((dec + frac) == 0) {
-		// 정수부와 소수부 모두 0일 경우 0을 반환
-		return 0;
-	}
 
 	if (dec_size > 36) {	// 정수부가 36비트가 넘어갈 경우 넘는 비트 잘라내기
 		dec >>= (dec_size - 36);
@@ -611,16 +610,22 @@ void CreateProgramList() {	// 리스트 파일 생성
 		for (loop = 0; loop < ArrayIndex[csect_loop]; loop++)
 		{
 			len = 0;
+			if (strlen(IMRArray[csect_loop][loop]->OperandField) <= 0
+				&& !strcmp(IMRArray[csect_loop][loop]->OperatorField, "END")) {
+				// END 어셈블러 지시자의 피연산자가 없을 경우 건너 뛰기
+				continue;
+			}
 			fprintf(fptr_list, "%04X\t%-10s%-10s%-10s\t",
 				IMRArray[csect_loop][loop]->Loc,
-				IMRArray[csect_loop][loop]->LabelField, 
+				IMRArray[csect_loop][loop]->LabelField,
 				IMRArray[csect_loop][loop]->OperatorField,
 				IMRArray[csect_loop][loop]->OperandField);	// 모든 코드들의 공통되는 부분
+
 			if (!strcmp(IMRArray[csect_loop][loop]->OperatorField, "START")
 				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESW")
 				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "RESB")
-				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "BASE")
 				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "END")
+				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "BASE")
 				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTREF")
 				|| !strcmp(IMRArray[csect_loop][loop]->OperatorField, "EXTDEF"))
 				// Object code 출력이 필요없는 부분들 object code 생략
@@ -663,7 +668,6 @@ void CreateProgramList() {	// 리스트 파일 생성
 				}
 			}
 		}
-		printf("\n");
 		fprintf(fptr_list, "\n");
 	}
 	fclose(fptr_list);	// 리스트 파일 출력이 종료되어서 파일 저장
@@ -892,8 +896,8 @@ void CreateObjectCode() {	// 목적파일 생성
 		printf("E");
 		fprintf(fptr_obj, "E");
 		if (SearchSymtab(End_operand, csect_loop)) {
-			printf("%06X\n\n", start_address[csect_loop]);
-			fprintf(fptr_obj, "^%06X\n\n", start_address[csect_loop]);
+			printf("%06X\n\n", SYMTAB[csect_loop][SymIdx].Address);
+			fprintf(fptr_obj, "^%06X\n\n", SYMTAB[csect_loop][SymIdx].Address);
 		} else {
 			printf("\n\n");
 			fprintf(fptr_obj, "\n\n");
@@ -1076,6 +1080,7 @@ void main(void)
 						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->LabelField[0] = '\0';
 						IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->Loc = LOCCTR[LocctrCounter - 1];
 						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperatorField, "END");
+						strcpy(IMRArray[CSectCounter][ArrayIndex[CSectCounter]]->OperandField, "");
 						program_length[CSectCounter] = LOCCTR[LocctrCounter - 1] - LOCCTR[0];
 						ArrayIndex[CSectCounter]++;
 						
