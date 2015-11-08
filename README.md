@@ -5,8 +5,8 @@
 [MinJunKweon](http://github.com/MinJunKweon)
 
 ## What is SIC/XE Machhine
-[SIC Machine](https://en.wikipedia.org/wiki/Simplified_Instructional_Computer)'s eXension Edition
-you can read article at [SIC/XE](https://en.wikipedia.org/wiki/SIC/XE) on wikipedia
+* [SIC Machine](https://en.wikipedia.org/wiki/Simplified_Instructional_Computer)'s eXension Edition
+* you can read article at [SIC/XE](https://en.wikipedia.org/wiki/SIC/XE) on wikipedia
 
 ## Function
 * Control Section
