@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Sic.c">
+    <ClCompile Include="..\..\SicXE.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
